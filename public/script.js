@@ -1,0 +1,12365 @@
+if (new URLSearchParams(location.search).has("play")) {
+        document.body.classList.add("play-mode");
+      }
+
+      // Guest-only menu script (Firebase removed, local worlds only)
+      const translations = {
+        ja: {
+          single: "シングルプレイ",
+          multi: "マルチプレイ",
+          realms: "Minecraft Realms",
+          options: "設定...",
+          quit: "ゲーム終了",
+          noWorld: "ワールドがありません",
+          playWorld: "選択したワールドで遊ぶ",
+          createWorld: "新規ワールドを作成",
+          edit: "編集",
+          delete: "削除",
+          cancel: "キャンセル",
+          newWorldTitle: "ワールド新規作成",
+          editWorldTitle: "ワールドの編集",
+          deleteWorldTitle: "本当にワールドを削除しますか？",
+          deleteWarning: "この操作は元に戻せません！",
+          deleteButton: "削除",
+          saveWorld: "保存",
+          worldTitleLabel: "タイトル名",
+          structuresOn: "構造物の生成: オン",
+          structuresDesc: "村、ダンジョンなど",
+          cheatsOn: "チートの許可: オン",
+          cheatsDesc: "/gamemode、/xp 等のコマンド",
+          createWorldBtn: "ワールド新規作成",
+          multiTitle: "マルチプレイで遊ぶ",
+          connectServer: "接続",
+          roomLabel: "ルームID",
+          playerName: "プレイヤー名",
+          lanSearching: "LAN内のゲームを検索中",
+          realmsLogo: "REALMS",
+          realmsMsg:
+            "Realmを所有していないようです。Realmを追加してフレンドと一緒にプレイしましょう。",
+          addRealm: "Realm を追加",
+          back: "戻る",
+          paywallTitle: "利用不可",
+          paywallDesc:
+            "マルチプレイ・Realmsはこのゲスト版では利用できません。<br>シングルプレイをお楽しみください。",
+          ok: "OK",
+          settingsTitle: "設定",
+          soundSettings: "サウンド設定...",
+          videoSettings: "ビデオ設定...",
+          langSettings: "言語...",
+          brightnessSettings: "明るさ...",
+          done: "完了",
+          quitConfirm: "本当にゲームを終了しますか？",
+          quitTitle: "ゲームが終了しました",
+          quitSub: "ブラウザのタブを閉じてください",
+        },
+        en: {
+          single: "Singleplayer",
+          multi: "Multiplayer",
+          realms: "Minecraft Realms",
+          options: "Options...",
+          quit: "Quit",
+          noWorld: "No worlds found",
+          playWorld: "Play Selected World",
+          createWorld: "Create New World",
+          edit: "Edit",
+          delete: "Delete",
+          cancel: "Cancel",
+          newWorldTitle: "Create New World",
+          editWorldTitle: "Edit World",
+          deleteWorldTitle: "Are you sure you want to delete this world?",
+          deleteWarning: "This action cannot be undone!",
+          deleteButton: "Delete",
+          saveWorld: "Save",
+          worldTitleLabel: "World Name",
+          structuresOn: "Generate Structures: ON",
+          structuresDesc: "Villages, dungeons, etc.",
+          cheatsOn: "Allow Cheats: ON",
+          cheatsDesc: "/gamemode, /xp, etc.",
+          createWorldBtn: "Create New World",
+          multiTitle: "Play Multiplayer",
+          connectServer: "Connect",
+          roomLabel: "Room ID",
+          playerName: "Player Name",
+          lanSearching: "Searching for games on your LAN",
+          realmsLogo: "REALMS",
+          realmsMsg:
+            "You do not own a Realm. Add a Realm to play with your friends.",
+          addRealm: "Add Realm",
+          back: "Back",
+          paywallTitle: "Unavailable",
+          paywallDesc:
+            "Multiplayer and Realms are not available in this guest version.<br>Enjoy Singleplayer!",
+          ok: "OK",
+          settingsTitle: "Options",
+          soundSettings: "Music & Sounds...",
+          videoSettings: "Video Settings...",
+          langSettings: "Language...",
+          brightnessSettings: "Brightness...",
+          done: "Done",
+          quitConfirm: "Are you sure you want to quit?",
+          quitTitle: "Game Quit",
+          quitSub: "Please close this browser tab",
+        },
+      };
+
+      let currentLang = "ja";
+      let worlds = [];
+      let selectedWorldIndex = null;
+      let defaultServers = [
+             ];
+      let servers = defaultServers;
+      let serverStatuses = {};
+      let selectedServerIndex = 0;
+      let deleteTargetType = null;
+      const firebaseUid = "guest";
+      let newWorldStructures = true;
+      let newWorldMode = "survival";
+      let newWorldType = "default";
+
+      function localWorldsKey(uid) {
+        return "mc_local_worlds_" + (uid || "guest");
+      }
+      function loadLocalWorlds(uid) {
+        try {
+          const raw = localStorage.getItem(localWorldsKey(uid));
+          if (!raw) return [];
+          const arr = JSON.parse(raw);
+          return Array.isArray(arr)
+            ? arr.map((w) => ({
+                id: w.id,
+                name: w.name,
+                structuresEnabled:
+                  w.structuresEnabled !== undefined
+                    ? w.structuresEnabled
+                    : true,
+                gameMode: w.gameMode || "survival",
+                worldType: w.worldType || "default",
+                seed:
+                  Number.isFinite(Number(w.seed)) && Number(w.seed) > 0
+                    ? Number(w.seed)
+                    : null,
+                createdAt: w.createdAt || Date.now(),
+              }))
+            : [];
+        } catch (e) {
+          return [];
+        }
+      }
+      function saveLocalWorlds(uid, arr) {
+        try {
+          localStorage.setItem(localWorldsKey(uid), JSON.stringify(arr));
+        } catch (e) {}
+      }
+
+      function generateUniqueSingleplayerSeed(uid) {
+        const arr = loadLocalWorlds(uid);
+        const used = new Set(
+          arr
+            .map((w) => Number(w.seed))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        );
+        for (let attempt = 0; attempt < 32; attempt++) {
+          let seed = 0;
+          try {
+            const a = new Uint32Array(1);
+            if (window.crypto && window.crypto.getRandomValues) {
+              window.crypto.getRandomValues(a);
+              seed = (a[0] % 2000000000) + 1;
+            } else {
+              seed = Math.floor(Math.random() * 2000000000) + 1;
+            }
+          } catch (e) {
+            seed = Math.floor(Math.random() * 2000000000) + 1;
+          }
+          if (!used.has(seed)) return seed;
+        }
+        let seed =
+          (((Date.now() ^ Math.floor(Math.random() * 2147483647)) >>> 0) %
+            2000000000) +
+          1;
+        while (used.has(seed)) seed = (seed % 2000000000) + 1;
+        return seed;
+      }
+
+      function addLocalWorld(uid, name, meta) {
+        const arr = loadLocalWorlds(uid);
+        const id = "local-" + (uid || "guest") + "-" + Date.now();
+        const worldSeed =
+          meta && Number.isFinite(Number(meta.seed)) && Number(meta.seed) > 0
+            ? Number(meta.seed)
+            : generateUniqueSingleplayerSeed(uid);
+        const w = {
+          id,
+          name,
+          structuresEnabled:
+            meta && meta.structuresEnabled !== undefined
+              ? meta.structuresEnabled
+              : true,
+          gameMode: meta && meta.gameMode ? meta.gameMode : "survival",
+          worldType: meta && meta.worldType ? meta.worldType : "default",
+          seed: worldSeed,
+          createdAt: Date.now(),
+        };
+        arr.push(w);
+        saveLocalWorlds(uid, arr);
+        return w;
+      }
+      function updateLocalWorld(uid, id, newName) {
+        const arr = loadLocalWorlds(uid);
+        const idx = arr.findIndex((x) => x.id === id);
+        if (idx >= 0) {
+          arr[idx].name = newName;
+          saveLocalWorlds(uid, arr);
+          return true;
+        }
+        return false;
+      }
+      function deleteLocalWorld(uid, id) {
+        const arr = loadLocalWorlds(uid);
+        const idx = arr.findIndex((x) => x.id === id);
+        if (idx >= 0) {
+          arr.splice(idx, 1);
+          saveLocalWorlds(uid, arr);
+          return true;
+        }
+        return false;
+      }
+      function uniqueWorldName(baseName) {
+        const existing = new Set(worlds.map((w) => w.name));
+        if (!existing.has(baseName)) return baseName;
+        let n = 1;
+        while (existing.has(baseName + "(" + n + ")")) n++;
+        return baseName + "(" + n + ")";
+      }
+
+      function updateTexts() {
+        const t = translations[currentLang];
+        document.querySelectorAll("[data-key]").forEach((el) => {
+          const key = el.getAttribute("data-key");
+          if (t[key]) {
+            if (el.id === "btn-add-realm") {
+              el.querySelector("span").textContent = t.addRealm;
+            } else {
+              el.textContent = t[key];
+            }
+          }
+        });
+        const worldInput = document.getElementById("world-name-input");
+        if (currentLang === "en" && worldInput.value === "新しい世界")
+          worldInput.value = "New World";
+        else if (currentLang === "ja" && worldInput.value === "New World")
+          worldInput.value = "新しい世界";
+      }
+
+      document.getElementById("lang-ja").addEventListener("click", () => {
+        currentLang = "ja";
+        updateTexts();
+      });
+      document.getElementById("lang-en").addEventListener("click", () => {
+        currentLang = "en";
+        updateTexts();
+      });
+      document.querySelectorAll(".btn-minecraft").forEach((btn) => {
+        btn.addEventListener("mouseleave", function () {
+          btn.blur();
+        });
+      });
+
+      const mainMenu = document.getElementById("main-menu");
+      const singleMenu = document.getElementById("single-menu");
+      const multiMenu = document.getElementById("multi-menu");
+      const realmsMenu = document.getElementById("realms-menu");
+      const createMenu = document.getElementById("create-menu");
+      const loadingMenu = document.getElementById("loading-menu");
+      const editMenu = document.getElementById("edit-menu");
+      const deleteMenu = document.getElementById("delete-menu");
+      const settingsMenu = document.getElementById("settings-menu");
+      const soundMenu = document.getElementById("sound-menu");
+      const videoMenu = document.getElementById("video-menu");
+      const langMenu = document.getElementById("lang-menu");
+      const brightnessMenu = document.getElementById("brightness-menu");
+      const accountMenu = document.getElementById("account-menu");
+      const skinMenu = document.getElementById("skin-menu");
+      const paywallModal = document.getElementById("paywall-modal");
+
+      function changeScreen(target) {
+        [
+          mainMenu,
+          singleMenu,
+          multiMenu,
+          realmsMenu,
+          createMenu,
+          loadingMenu,
+          editMenu,
+          deleteMenu,
+          settingsMenu,
+          soundMenu,
+          videoMenu,
+          langMenu,
+          brightnessMenu,
+          accountMenu,
+          skinMenu,
+        ].forEach((s) => (s.style.display = "none"));
+        target.style.display = "flex";
+      }
+
+      document.getElementById("btn-single").addEventListener("click", () => {
+        document.getElementById("greeting-message").textContent = "";
+        changeScreen(singleMenu);
+      });
+      document.getElementById("btn-multi").addEventListener("click", () => {
+        changeScreen(multiMenu);
+        renderServers();
+        if (typeof window.__mcServerMenuInit === "function")
+          window.__mcServerMenuInit();
+      });
+      document.getElementById("btn-realms").addEventListener("click", () => {
+        paywallModal.style.display = "flex";
+      });
+      document
+        .getElementById("btn-options")
+        .addEventListener("click", () => changeScreen(settingsMenu));
+
+      document
+        .getElementById("btn-single-back")
+        .addEventListener("click", () => {
+          selectedWorldIndex = null;
+          renderWorlds();
+          changeScreen(mainMenu);
+        });
+      document
+        .getElementById("btn-go-create")
+        .addEventListener("click", () => changeScreen(createMenu));
+      document
+        .getElementById("btn-create-back")
+        .addEventListener("click", () => changeScreen(singleMenu));
+
+      document
+        .getElementById("btn-play-world")
+        .addEventListener("click", () => {
+          if (selectedWorldIndex !== null && worlds[selectedWorldIndex]) {
+            document.getElementById("greeting-message").textContent = "やあ！";
+            try {
+              localStorage.setItem(
+                "mc_selected_world",
+                JSON.stringify(worlds[selectedWorldIndex])
+              );
+              sessionStorage.setItem("mc_game_mode", "single");
+            } catch (e) {}
+            location.href = "?play=1&mode=single";
+          }
+        });
+
+      document
+        .getElementById("btn-multi-back")
+        .addEventListener("click", () => changeScreen(mainMenu));
+      document
+        .getElementById("btn-connect-server")
+        .addEventListener("click", () => {
+          const roomEl = document.getElementById("mp-room-id");
+          const nameEl = document.getElementById("mp-player-name");
+          const room =
+            ((roomEl && roomEl.value) || "test-room")
+              .trim()
+              .replace(/[^a-zA-Z0-9_-]/g, "-")
+              .slice(0, 32) || "test-room";
+          const name =
+            (
+              (nameEl && nameEl.value) ||
+              localStorage.getItem("mc_player_name") ||
+              "Player"
+            )
+              .trim()
+              .slice(0, 16) || "Player";
+          try {
+            localStorage.setItem("mc_player_name", name);
+          } catch (e) {}
+          if (
+            typeof window.__mcServerConfigured === "function" &&
+            !window.__mcServerConfigured()
+          ) {
+            if (typeof window.__mcServerMenuInit === "function")
+              window.__mcServerMenuInit(true);
+            return;
+          }
+          location.href =
+            "?play=1&mode=multi&room=" +
+            encodeURIComponent(room) +
+            "&name=" +
+            encodeURIComponent(name);
+        });
+      document
+        .getElementById("btn-realms-back")
+        .addEventListener("click", () => changeScreen(mainMenu));
+      document.getElementById("btn-add-realm").addEventListener("click", () => {
+        paywallModal.style.display = "flex";
+      });
+      document
+        .getElementById("btn-close-paywall")
+        .addEventListener("click", () => {
+          paywallModal.style.display = "none";
+        });
+
+      const comingSoonModal = document.getElementById("coming-soon-modal");
+      function showComingSoon() {
+        if (comingSoonModal) comingSoonModal.style.display = "flex";
+      }
+      document
+        .getElementById("btn-close-coming-soon")
+        .addEventListener("click", () => {
+          if (comingSoonModal) comingSoonModal.style.display = "none";
+        });
+
+      const btnStructures = document.getElementById("btn-structures");
+      if (btnStructures) {
+        btnStructures.addEventListener("click", () => {
+          newWorldStructures = !newWorldStructures;
+          btnStructures.textContent = newWorldStructures
+            ? currentLang === "ja"
+              ? "構造物の生成: オン"
+              : "Generate Structures: ON"
+            : currentLang === "ja"
+            ? "構造物の生成: オフ"
+            : "Generate Structures: OFF";
+        });
+      }
+      const btnWorldType = document.getElementById("btn-world-type");
+      if (btnWorldType) {
+        btnWorldType.addEventListener("click", () => {
+          newWorldMode = newWorldMode === "survival" ? "creative" : "survival";
+          btnWorldType.textContent =
+            newWorldMode === "survival"
+              ? currentLang === "ja"
+                ? "モード: サバイバル"
+                : "Game Mode: Survival"
+              : currentLang === "ja"
+              ? "モード: クリエイティブ"
+              : "Game Mode: Creative";
+        });
+      }
+      const btnBonusChest = document.getElementById("btn-bonus-chest");
+      if (btnBonusChest) {
+        btnBonusChest.addEventListener("click", () => {
+          newWorldType = newWorldType === "default" ? "flat" : "default";
+          btnBonusChest.textContent =
+            newWorldType === "default"
+              ? currentLang === "ja"
+                ? "ワールドタイプ: デフォルト"
+                : "World Type: Default"
+              : currentLang === "ja"
+              ? "ワールドタイプ: フラット"
+              : "World Type: Flat";
+        });
+      }
+      const btnCheats = document.getElementById("btn-cheats");
+      if (btnCheats) {
+        btnCheats.addEventListener("click", showComingSoon);
+      }
+
+      function renderServers() {
+        const serverList = document.getElementById("server-list");
+        serverList.innerHTML = "";
+        const btnConnect = document.getElementById("btn-connect-server");
+        if (
+          selectedServerIndex !== null &&
+          selectedServerIndex >= servers.length
+        )
+          selectedServerIndex = null;
+        if (selectedServerIndex === null)
+          btnConnect.setAttribute("disabled", "true");
+        else btnConnect.removeAttribute("disabled");
+        servers.forEach((srv, index) => {
+          const item = document.createElement("div");
+          item.className = "server-item";
+          if (index === selectedServerIndex) item.classList.add("selected");
+          const status = serverStatuses[srv.address] || {
+            onlineCount: 0,
+            maxPlayers: 20,
+          };
+          const countText = `${status.onlineCount || 0}/${
+            status.maxPlayers || 20
+          }`;
+          const pingColor = status.onlineCount > 0 ? "#55ff55" : "#aaaaaa";
+          item.innerHTML = `
+      <div class="server-info">
+        <div class="server-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#55ffff" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        </div>
+        <div class="server-text-box">
+          <span class="server-name">${srv.name} <span style="font-size:0.75rem; color:#888; font-weight:normal;">(${srv.address})</span></span>
+          <span class="server-motd">${srv.motd}</span>
+        </div>
+      </div>
+      <div class="server-status">
+        <span style="color:#ddd; font-size:0.85rem;">${countText}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="${pingColor}"><path d="M2 22h4V12H2v10zm6 0h4V2H8v20zm6 0h4V8h-4v14zm6 0h4V16h-4v6z"/></svg>
+      </div>
+    `;
+          item.addEventListener("click", () => {
+            selectedServerIndex = index;
+            renderServers();
+          });
+          serverList.appendChild(item);
+        });
+      }
+
+      document
+        .getElementById("btn-start-create")
+        .addEventListener("click", () => {
+          const input = document.getElementById("world-name-input");
+          const rawName =
+            input.value.trim() ||
+            (currentLang === "ja" ? "新しい世界" : "New World");
+          const worldName = uniqueWorldName(rawName);
+          const meta = {
+            structuresEnabled: newWorldStructures,
+            gameMode: newWorldMode,
+            worldType: newWorldType,
+            seed: generateUniqueSingleplayerSeed(firebaseUid),
+          };
+          const createdWorld = addLocalWorld(firebaseUid, worldName, meta);
+          const existingIndex = worlds.findIndex(
+            (w) => w.id === createdWorld.id
+          );
+          if (existingIndex === -1) worlds.push(createdWorld);
+          worlds.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+          selectedWorldIndex = worlds.findIndex(
+            (w) => w.id === createdWorld.id
+          );
+          renderWorlds();
+          changeScreen(loadingMenu);
+          let percent = 0;
+          const loadingText = document.getElementById("loading-text");
+          const mapChunk = document.getElementById("map-chunk");
+          mapChunk.style.width = "20px";
+          mapChunk.style.height = "20px";
+          const interval = setInterval(() => {
+            percent += Math.floor(Math.random() * 8) + 3;
+            if (percent >= 100) {
+              percent = 100;
+              clearInterval(interval);
+              setTimeout(() => {
+                changeScreen(singleMenu);
+                renderWorlds();
+              }, 400);
+            }
+            loadingText.textContent = percent + "%";
+            const boxSize = 20 + percent * 1.4;
+            mapChunk.style.width = boxSize + "px";
+            mapChunk.style.height = boxSize + "px";
+          }, 80);
+        });
+
+      function renderWorlds() {
+        const worldList = document.getElementById("world-list");
+        worldList.innerHTML = "";
+        const btnPlay = document.getElementById("btn-play-world");
+        const btnEdit = document.getElementById("btn-go-edit");
+        const btnDelete = document.getElementById("btn-go-delete");
+        if (selectedWorldIndex !== null && selectedWorldIndex >= worlds.length)
+          selectedWorldIndex = null;
+        if (selectedWorldIndex === null) {
+          btnPlay.setAttribute("disabled", "true");
+          btnEdit.setAttribute("disabled", "true");
+          btnDelete.setAttribute("disabled", "true");
+        } else {
+          btnPlay.removeAttribute("disabled");
+          btnEdit.removeAttribute("disabled");
+          btnDelete.removeAttribute("disabled");
+        }
+        if (worlds.length === 0) {
+          const noWorld = document.createElement("div");
+          noWorld.id = "no-world-text";
+          noWorld.setAttribute("data-key", "noWorld");
+          noWorld.textContent = translations[currentLang].noWorld;
+          worldList.appendChild(noWorld);
+        } else {
+          worlds.forEach((w, index) => {
+            const item = document.createElement("div");
+            item.className = "world-item";
+            if (index === selectedWorldIndex) item.classList.add("selected");
+            const modeLabel =
+              w.gameMode === "creative" ? "クリエイティブ" : "サバイバル";
+            const typeLabel =
+              w.worldType === "flat" ? "フラット" : "デフォルト";
+            item.innerHTML = `<span>${w.name}</span><span style="font-size:0.75rem; color:#aaa;">${modeLabel} (${typeLabel})</span>`;
+            item.addEventListener("click", () => {
+              selectedWorldIndex = index;
+              renderWorlds();
+            });
+            worldList.appendChild(item);
+          });
+        }
+      }
+
+      document.getElementById("btn-go-edit").addEventListener("click", () => {
+        if (selectedWorldIndex === null) return;
+        document.getElementById("edit-name-input").value =
+          worlds[selectedWorldIndex].name;
+        changeScreen(editMenu);
+      });
+      document.getElementById("btn-save-edit").addEventListener("click", () => {
+        if (selectedWorldIndex === null || !worlds[selectedWorldIndex]) {
+          changeScreen(singleMenu);
+          return;
+        }
+        const newName = document.getElementById("edit-name-input").value.trim();
+        if (!newName) return;
+        const world = worlds[selectedWorldIndex];
+        updateLocalWorld(firebaseUid, world.id, newName);
+        world.name = newName;
+        renderWorlds();
+        changeScreen(singleMenu);
+      });
+      document
+        .getElementById("btn-edit-back")
+        .addEventListener("click", () => changeScreen(singleMenu));
+
+      document.getElementById("btn-go-delete").addEventListener("click", () => {
+        if (selectedWorldIndex === null) return;
+        deleteTargetType = "world";
+        document.getElementById("delete-title").textContent =
+          translations[currentLang].deleteWorldTitle;
+        changeScreen(deleteMenu);
+      });
+      document
+        .getElementById("btn-confirm-delete")
+        .addEventListener("click", () => {
+          if (
+            deleteTargetType !== "world" ||
+            selectedWorldIndex === null ||
+            !worlds[selectedWorldIndex]
+          )
+            return;
+          const id = worlds[selectedWorldIndex].id;
+          deleteLocalWorld(firebaseUid, id);
+          worlds.splice(selectedWorldIndex, 1);
+          selectedWorldIndex = null;
+          renderWorlds();
+          changeScreen(singleMenu);
+        });
+      document
+        .getElementById("btn-delete-back")
+        .addEventListener("click", () => {
+          if (deleteTargetType === "world") changeScreen(singleMenu);
+          else changeScreen(multiMenu);
+        });
+
+      document
+        .getElementById("btn-settings-back")
+        .addEventListener("click", () => changeScreen(mainMenu));
+      document
+        .getElementById("btn-go-sound")
+        .addEventListener("click", () => changeScreen(soundMenu));
+      document
+        .getElementById("btn-go-video")
+        .addEventListener("click", () => changeScreen(videoMenu));
+      document
+        .getElementById("btn-go-lang")
+        .addEventListener("click", () => changeScreen(langMenu));
+      document
+        .getElementById("btn-go-brightness")
+        .addEventListener("click", () => changeScreen(brightnessMenu));
+      document
+        .getElementById("btn-sound-back")
+        .addEventListener("click", () => changeScreen(settingsMenu));
+      document
+        .getElementById("btn-video-back")
+        .addEventListener("click", () => changeScreen(settingsMenu));
+      document
+        .getElementById("btn-lang-back")
+        .addEventListener("click", () => changeScreen(settingsMenu));
+      document
+        .getElementById("btn-brightness-back")
+        .addEventListener("click", () => changeScreen(settingsMenu));
+
+      const skinShirtColor = document.getElementById("skin-shirt-color");
+      const skinPantsColor = document.getElementById("skin-pants-color");
+      const skinPreviewBody = document.getElementById("skin-preview-body");
+      const skinPreviewLegs = document.getElementById("skin-preview-legs");
+      function loadSkinColors() {
+        skinShirtColor.value =
+          localStorage.getItem("mc_skin_shirt") || "#3fb2c8";
+        skinPantsColor.value =
+          localStorage.getItem("mc_skin_pants") || "#4a449e";
+        skinPreviewBody.style.background = skinShirtColor.value;
+        skinPreviewLegs.style.background = skinPantsColor.value;
+      }
+      loadSkinColors();
+      skinShirtColor.addEventListener("input", function () {
+        skinPreviewBody.style.background = this.value;
+      });
+      skinPantsColor.addEventListener("input", function () {
+        skinPreviewLegs.style.background = this.value;
+      });
+      document.getElementById("btn-go-skin").addEventListener("click", () => {
+        loadSkinColors();
+        changeScreen(skinMenu);
+      });
+      document.getElementById("btn-skin-back").addEventListener("click", () => {
+        localStorage.setItem("mc_skin_shirt", skinShirtColor.value);
+        localStorage.setItem("mc_skin_pants", skinPantsColor.value);
+        changeScreen(settingsMenu);
+      });
+
+      const btnGoAccount = document.getElementById("btn-go-account");
+      if (btnGoAccount) {
+        btnGoAccount.addEventListener("click", () => {
+          const sl = document.getElementById("account-status-label");
+          const ul = document.getElementById("account-uid-label");
+          const msg = document.getElementById("account-message");
+          if (sl) sl.textContent = "ゲストモード";
+          if (ul) ul.textContent = "ログイン不要でそのまま遊べます";
+          if (msg) {
+            msg.textContent = "このゲスト版にログイン機能はありません。";
+            msg.style.color = "#ffaa00";
+          }
+          changeScreen(accountMenu);
+        });
+      }
+      document
+        .getElementById("btn-account-back")
+        .addEventListener("click", () => changeScreen(settingsMenu));
+      [
+        "btn-account-login",
+        "btn-account-register",
+        "btn-account-logout",
+      ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el)
+          el.addEventListener("click", () => {
+            const msg = document.getElementById("account-message");
+            if (msg) {
+              msg.textContent = "ゲスト版では利用できません";
+              msg.style.color = "#ff8888";
+            }
+          });
+      });
+
+      document.getElementById("sound-slider").addEventListener("input", (e) => {
+        document.getElementById("sound-label").textContent =
+          currentLang === "ja"
+            ? `マスター音量: ${e.target.value}%`
+            : `Master Volume: ${e.target.value}%`;
+      });
+      document
+        .getElementById("brightness-slider")
+        .addEventListener("input", (e) => {
+          const val = e.target.value;
+          document.getElementById("brightness-label").textContent =
+            currentLang === "ja" ? `明るさ: ${val}%` : `Brightness: ${val}%`;
+          document.body.style.filter = `brightness(${val / 100})`;
+        });
+
+      const btnGraphics = document.getElementById("btn-graphics");
+      btnGraphics.addEventListener("click", () => {
+        btnGraphics.textContent = btnGraphics.textContent.includes("華麗")
+          ? "グラフィック: ファースト"
+          : "グラフィック: 華麗";
+      });
+      const btnParticles = document.getElementById("btn-particles");
+      btnParticles.addEventListener("click", () => {
+        if (btnParticles.textContent.includes("すべて"))
+          btnParticles.textContent = "パーティクル: 減少";
+        else if (btnParticles.textContent.includes("減少"))
+          btnParticles.textContent = "パーティクル: 最小限";
+        else btnParticles.textContent = "パーティクル: すべて";
+      });
+
+      document.getElementById("btn-quit").addEventListener("click", () => {
+        const t = translations[currentLang];
+        if (confirm(t.quitConfirm)) {
+          document.body.style.filter = "none";
+          document.body.innerHTML = `<div style="background: black; height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; font-family: 'Minecraftia', sans-serif;"><h1 style="font-size: 1.5rem; margin-bottom: 1rem;">${t.quitTitle}</h1><p style="font-size: 0.8rem; color: #aaa;">${t.quitSub}</p></div>`;
+        }
+      });
+
+      updateTexts();
+      worlds = loadLocalWorlds(firebaseUid);
+      renderWorlds();
+
+      var canvas = document.getElementById("overlay");
+      var ctx = canvas.getContext("2d");
+      // 初期サイズ設定とリサイズ対応を追加（変更箇所）
+      function resizeOverlay() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        // WebGL のキャンバスが存在すれば viewport も更新
+        if (window.gl && gl && gl.canvas) {
+          gl.canvas.width = canvas.width;
+          gl.canvas.height = canvas.height;
+          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+          // HUD 再描画フラグ
+          try {
+            updateHUD = true;
+          } catch (e) {}
+        }
+      }
+      // 初期化
+      resizeOverlay();
+      window.addEventListener("resize", resizeOverlay, { passive: true });
+
+      /* Set this text editor to max width by copying this into the JS console:
+    document.getElementsByClassName("_1chbfei")[0].setAttribute('style', 'max-width: 100vw !important');
+    */
+      var delag = function (f) {
+        delag.stripDetection =
+          delag.stripDetection ||
+          function (s) {
+            var outLines = [];
+            var lines = s.split("\n");
+            for (var i = 0; i < lines.length; i++) {
+              if (!lines[i].includes("KAInfiniteLoopProtect")) {
+                outLines.push(lines[i]);
+              }
+            }
+            return outLines.join("\n");
+          };
+        var str = delag.stripDetection(f.toString());
+        /* Copied from Element118 delag() function: */
+        return Object.constructor(
+          "return (function(__env__) {return " + str + ";});"
+        )()(this);
+      };
+      var MathGlob = Math;
+      var init = delag(function () {
+        var Math = MathGlob;
+        var setPixel, getPixels;
+        var drawDoorTexture = function (n, plankTexKey, isUpper) {
+          var src = textures[plankTexKey];
+          if (typeof src === "function") {
+            src(n);
+          } else if (typeof src === "string") {
+            var pix = getPixels(src);
+            for (var i = 0; i < pix.length; i += 4) {
+              setPixel(
+                n,
+                (i >> 2) & 15,
+                i >> 6,
+                pix[i],
+                pix[i + 1],
+                pix[i + 2],
+                pix[i + 3]
+              );
+            }
+          }
+          var pals = {
+            oakPlanks: {
+              f: [80, 55, 30],
+              g: [200, 220, 230],
+              h: [50, 35, 20],
+              m: [0, 0, 0],
+            },
+            sprucePlanks: {
+              f: [40, 28, 16],
+              g: [0, 0, 0],
+              h: [65, 65, 70],
+              m: [65, 65, 70],
+            },
+            birchPlanks: {
+              f: [160, 140, 100],
+              g: [225, 235, 240],
+              h: [80, 70, 50],
+              m: [0, 0, 0],
+            },
+            junglePlanks: {
+              f: [90, 55, 35],
+              g: [180, 200, 170],
+              h: [60, 45, 30],
+              m: [70, 60, 50],
+            },
+            acaciaPlanks: {
+              f: [120, 55, 25],
+              g: [220, 200, 170],
+              h: [100, 50, 20],
+              m: [80, 70, 60],
+            },
+            darkOakPlanks: {
+              f: [35, 22, 12],
+              g: [0, 0, 0],
+              h: [212, 175, 55],
+              m: [60, 50, 40],
+            },
+          };
+          var p = pals[plankTexKey] || pals.oakPlanks;
+          var fc = p.f,
+            gc = p.g,
+            hc = p.h,
+            mc = p.m;
+          for (var x = 0; x < 16; x++) {
+            setPixel(n, x, 0, fc[0], fc[1], fc[2]);
+            setPixel(n, x, 1, fc[0], fc[1], fc[2]);
+            setPixel(n, x, 14, fc[0], fc[1], fc[2]);
+            setPixel(n, x, 15, fc[0], fc[1], fc[2]);
+          }
+          for (var y = 2; y < 14; y++) {
+            setPixel(n, 0, y, fc[0], fc[1], fc[2]);
+            setPixel(n, 1, y, fc[0], fc[1], fc[2]);
+            setPixel(n, 14, y, fc[0], fc[1], fc[2]);
+            setPixel(n, 15, y, fc[0], fc[1], fc[2]);
+          }
+          var hasGlass = gc[0] || gc[1] || gc[2];
+          var hasMetal = mc[0] || mc[1] || mc[2];
+          if (
+            plankTexKey === "sprucePlanks" ||
+            plankTexKey === "darkOakPlanks"
+          ) {
+            if (hasMetal) {
+              for (var mx = 2; mx < 14; mx++) {
+                setPixel(n, mx, 5, mc[0], mc[1], mc[2]);
+                setPixel(n, mx, 10, mc[0], mc[1], mc[2]);
+              }
+              for (var my = 2; my < 14; my++) {
+                setPixel(n, 7, my, mc[0], mc[1], mc[2]);
+                setPixel(n, 8, my, mc[0], mc[1], mc[2]);
+              }
+            }
+            if (plankTexKey === "darkOakPlanks") {
+              for (var py = 4; py < 12; py++) {
+                for (var px = 4; px < 12; px++) {
+                  if (px === 4 || px === 11 || py === 4 || py === 11) {
+                    setPixel(
+                      n,
+                      px,
+                      py,
+                      Math.min(255, fc[0] * 1.4),
+                      Math.min(255, fc[1] * 1.4),
+                      Math.min(255, fc[2] * 1.4)
+                    );
+                  }
+                }
+              }
+            }
+          } else if (hasGlass) {
+            if (plankTexKey === "birchPlanks") {
+              for (var y = 3; y < 13; y++) {
+                for (var x = 4; x < 12; x++) {
+                  if (x === 4 || x === 11 || y === 3 || y === 12) {
+                    setPixel(n, x, y, fc[0], fc[1], fc[2]);
+                  } else {
+                    var d = Math.random() * 0.15 + 0.85;
+                    setPixel(n, x, y, gc[0] * d, gc[1] * d, gc[2] * d);
+                  }
+                }
+              }
+            } else if (plankTexKey === "junglePlanks") {
+              for (var y = 4; y < 12; y++) {
+                for (var x = 4; x < 12; x++) {
+                  var inArch =
+                    y >= 8 || (x - 7.5) * (x - 7.5) + (8 - y) * (8 - y) <= 10;
+                  if (inArch) {
+                    if (
+                      x === 4 ||
+                      x === 11 ||
+                      y === 11 ||
+                      (y < 8 && (x === 5 || x === 10))
+                    ) {
+                      setPixel(n, x, y, fc[0], fc[1], fc[2]);
+                    } else {
+                      var d = Math.random() * 0.2 + 0.8;
+                      setPixel(n, x, y, gc[0] * d, gc[1] * d, gc[2] * d);
+                    }
+                  } else {
+                    setPixel(n, x, y, fc[0], fc[1], fc[2]);
+                  }
+                }
+              }
+            } else if (plankTexKey === "acaciaPlanks") {
+              for (var y = 3; y < 13; y++) {
+                for (var x = 5; x < 11; x++) {
+                  if (x === 5 || x === 10 || y === 3 || y === 7 || y === 12) {
+                    setPixel(n, x, y, fc[0], fc[1], fc[2]);
+                  } else {
+                    var d = Math.random() * 0.2 + 0.8;
+                    setPixel(n, x, y, gc[0] * d, gc[1] * d, gc[2] * d);
+                  }
+                }
+              }
+            } else {
+              for (var y = 4; y < 12; y++) {
+                for (var x = 4; x < 12; x++) {
+                  if (x === 7 || y === 7) {
+                    setPixel(n, x, y, fc[0], fc[1], fc[2]);
+                  } else {
+                    var d = Math.random() * 0.2 + 0.8;
+                    setPixel(n, x, y, gc[0] * d, gc[1] * d, gc[2] * d);
+                  }
+                }
+              }
+            }
+          } else {
+            for (var y = 4; y < 12; y++) {
+              for (var x = 4; x < 12; x++) {
+                if (x === 4 || x === 11 || y === 4 || y === 11) {
+                  setPixel(n, x, y, fc[0], fc[1], fc[2]);
+                }
+              }
+            }
+          }
+          if (!isUpper) {
+            if (plankTexKey === "sprucePlanks") {
+              for (var ry = 6; ry < 10; ry++) {
+                for (var rx = 6; rx < 10; rx++) {
+                  var edge = rx === 6 || rx === 9 || ry === 6 || ry === 9;
+                  setPixel(
+                    n,
+                    rx,
+                    ry,
+                    edge ? hc[0] : hc[0] * 0.6,
+                    edge ? hc[1] : hc[1] * 0.6,
+                    edge ? hc[2] : hc[2] * 0.6
+                  );
+                }
+              }
+            } else {
+              setPixel(n, 12, 7, hc[0], hc[1], hc[2]);
+              setPixel(n, 12, 8, hc[0], hc[1], hc[2]);
+              setPixel(n, 13, 7, hc[0], hc[1], hc[2]);
+              setPixel(n, 13, 8, hc[0], hc[1], hc[2]);
+            }
+          }
+        };
+        // ===== モブ用テクスチャ（マイクラ風ピクセルアート） =====
+        function mobFillRect(n, x0, y0, w, h, col, shade) {
+          var d = shade === undefined ? 1 : shade;
+          for (var yy = y0; yy < y0 + h; yy++) {
+            for (var xx = x0; xx < x0 + w; xx++) {
+              if (xx < 0 || xx > 15 || yy < 0 || yy > 15) continue;
+              setPixel(
+                n,
+                xx,
+                yy,
+                Math.min(255, col[0] * d),
+                Math.min(255, col[1] * d),
+                Math.min(255, col[2] * d)
+              );
+            }
+          }
+        }
+        function mobPixel(n, x, y, col, shade) {
+          if (x < 0 || x > 15 || y < 0 || y > 15) return;
+          var d = shade === undefined ? 1 : shade;
+          setPixel(
+            n,
+            x,
+            y,
+            Math.min(255, col[0] * d),
+            Math.min(255, col[1] * d),
+            Math.min(255, col[2] * d)
+          );
+        }
+        function mobNoiseFill(n, col, amount, shadeRange) {
+          for (var yy = 0; yy < 16; yy++) {
+            for (var xx = 0; xx < 16; xx++) {
+              var d = 1 + (Math.random() - 0.5) * amount;
+              setPixel(
+                n,
+                xx,
+                yy,
+                Math.min(255, col[0] * d),
+                Math.min(255, col[1] * d),
+                Math.min(255, col[2] * d)
+              );
+            }
+          }
+        }
+        // 顔のベース＋目（テクスチャは y=0 が顔の上端）
+        function mobFaceBase(n, col, amount) {
+          mobNoiseFill(n, col, amount === undefined ? 0.1 : amount);
+        }
+        function mobEyes(n, leftX, rightX, y, dark, light) {
+          mobFillRect(n, leftX, y, 2, 2, dark, 1);
+          mobFillRect(n, rightX - 1, y, 2, 2, dark, 1);
+          mobPixel(n, leftX, y, light, 1);
+          mobPixel(n, rightX, y, light, 1);
+        }
+        // 羊毛のカール模様
+        function mobWoolPattern(n, base, dark) {
+          mobNoiseFill(n, base, 0.1);
+          for (var i = 0; i < 30; i++) {
+            var cx = Math.round(Math.random() * 15),
+              cy = Math.round(Math.random() * 15);
+            var r = 2 + Math.floor(Math.random() * 2);
+            for (var a = 0; a < 10; a++) {
+              var th = (a / 10) * Math.PI * 2;
+              mobPixel(
+                n,
+                Math.round(cx + Math.cos(th) * r),
+                Math.round(cy + Math.sin(th) * r),
+                dark,
+                1
+              );
+            }
+          }
+        }
+        // ブロック（革）の貼り合わせ目
+        function mobHidePattern(n, base, dark, amount) {
+          mobNoiseFill(n, base, amount === undefined ? 0.14 : amount);
+          for (var i = 0; i < 6; i++) {
+            var x = Math.floor(Math.random() * 14);
+            mobRectLine(n, x, dark);
+          }
+        }
+        function mobRectLine(n, x, dark) {
+          mobFillRect(n, x, 0, 1, 16, dark, 0.94);
+        }
+        // 鶏の羽（横じま）
+        function mobFeatherPattern(n, base, dark) {
+          mobNoiseFill(n, base, 0.08);
+          for (var y = 2; y < 16; y += 4) mobFillRect(n, 0, y, 16, 1, dark, 1);
+        }
+        // スポーンエッグ（卵型＋斑点）
+        function mobSpawnEggTex(n, base, speck, edge) {
+          var halfW = [3, 4, 5, 6, 6, 7, 7, 7, 7, 7, 7, 6, 6, 5, 4, 3];
+          for (var y = 0; y < 16; y++) {
+            var hw = halfW[y];
+            for (var x = 0; x < 16; x++) {
+              var dx = Math.abs(x - 7.5);
+              if (dx > hw) continue;
+              var d = 1;
+              if (dx > hw - 1.0) d = 0.72;
+              else if (dx > hw - 2.0) d = 0.88;
+              else if (dx < 2.2 && y > 2 && y < 10) d = 1.16;
+              if (Math.random() < 0.15) {
+                setPixel(n, x, y, speck[0], speck[1], speck[2]);
+              } else {
+                setPixel(
+                  n,
+                  x,
+                  y,
+                  Math.min(255, base[0] * d),
+                  Math.min(255, base[1] * d),
+                  Math.min(255, base[2] * d)
+                );
+              }
+            }
+          }
+        }
+        var textures = {
+          // ---- スポーンエッグ（豚・牛・ヒツジ・鶏） ----
+          eggPig: function (n) {
+            mobSpawnEggTex(n, [0xf0, 0xa5, 0xa2], [0xc9, 0x6b, 0x6b]);
+          },
+          eggCow: function (n) {
+            mobSpawnEggTex(n, [0x8b, 0x6a, 0x4b], [0xe7, 0xe3, 0xdc]);
+          },
+          eggSheep: function (n) {
+            mobSpawnEggTex(n, [0xe7, 0xe7, 0xe7], [0xa0, 0x8e, 0x7c]);
+          },
+          eggChicken: function (n) {
+            mobSpawnEggTex(n, [0xed, 0xed, 0xed], [0xe3, 0xa6, 0x3c]);
+          },
+          eggCat: function (n) {
+            mobSpawnEggTex(n, [0x25, 0x25, 0x25], [0xe9, 0xe9, 0xe9]);
+          },
+          eggBee: function (n) {
+            mobSpawnEggTex(n, [0xe6, 0xc8, 0x32], [0x28, 0x20, 0x18]);
+          },
+          eggAxolotl: function (n) {
+            mobSpawnEggTex(n, [0xfc, 0xae, 0xef], [0xe6, 0x49, 0xba]);
+          },
+          eggVillager: function (n) {
+            mobSpawnEggTex(n, [0x6f, 0x49, 0x30], [0xb9, 0x85, 0x62]);
+          },
+          eggWolf: function (n) {
+            mobSpawnEggTex(n, [0xa9, 0xa9, 0xa9], [0xb5, 0x1e, 0x2c]);
+          },
+          eggGolem: function (n) {
+            mobSpawnEggTex(n, [0xcf, 0xcf, 0xcf], [0x4f, 0x7a, 0x4b]);
+          },
+          eggEnderman: function (n) {
+            mobSpawnEggTex(n, [0x12, 0x12, 0x12], [0xd0, 0x42, 0xff]);
+          },
+          eggCreeper: function (n) {
+            mobSpawnEggTex(n, [0x38, 0x83, 0x38], [0x22, 0x55, 0x22]);
+          },
+          eggZombie: function (n) {
+            mobSpawnEggTex(n, [0x5c, 0x9b, 0x6a], [0x27, 0x7d, 0x7a]);
+          },
+          // ---- 豚 ----
+          mobPigSkin: function (n) {
+            mobHidePattern(n, [0xf0, 0xa5, 0xa2], [0xd9, 0x8e, 0x8b], 0.12);
+          },
+          mobPigSnout: function (n) {
+            mobNoiseFill(n, [0xd1, 0x7b, 0x7b], 0.08);
+            mobFillRect(n, 5, 5, 2, 4, [0x8a, 0x4b, 0x4b], 1);
+            mobFillRect(n, 9, 5, 2, 4, [0x8a, 0x4b, 0x4b], 1);
+          },
+          mobPigFace: function (n) {
+            mobFillRect(n, 0, 0, 16, 16, [0xf0, 0x98, 0x98], 1);
+            mobFillRect(n, 2, 6, 3, 2, [0xff, 0xff, 0xff], 1);
+            mobFillRect(n, 11, 6, 3, 2, [0xff, 0xff, 0xff], 1);
+            mobFillRect(n, 3, 6, 2, 2, [0x1d, 0x2a, 0x44], 1);
+            mobFillRect(n, 11, 6, 2, 2, [0x1d, 0x2a, 0x44], 1);
+          },
+          // ---- 牛 ----
+          mobCowSkin: function (n) {
+            mobHidePattern(n, [0x4b, 0x36, 0x24], [0x38, 0x27, 0x19], 0.16);
+            for (var b = 0; b < 6; b++) {
+              mobFillRect(
+                n,
+                Math.floor(Math.random() * 12),
+                Math.floor(Math.random() * 12),
+                2 + Math.floor(Math.random() * 3),
+                2 + Math.floor(Math.random() * 3),
+                [0xde, 0xda, 0xd4],
+                1
+              );
+            }
+          },
+          mobCowHorn: function (n) {
+            mobNoiseFill(n, [0xe8, 0xe4, 0xda], 0.1);
+          },
+          mobCowMuzzle: function (n) {
+            mobNoiseFill(n, [0xd8, 0xa8, 0xa8], 0.08);
+            mobFillRect(n, 5, 5, 2, 4, [0x6e, 0x4a, 0x4a], 1);
+            mobFillRect(n, 9, 5, 2, 4, [0x6e, 0x4a, 0x4a], 1);
+          },
+          mobCowFace: function (n) {
+            mobFaceBase(n, [0x4b, 0x36, 0x24], 0.16);
+            mobFillRect(n, 0, 0, 5, 5, [0xde, 0xda, 0xd4], 1);
+            mobFillRect(n, 11, 0, 5, 6, [0xde, 0xda, 0xd4], 1);
+            mobEyes(n, 3, 12, 5, [0x28, 0x1c, 0x1c], [0xff, 0xff, 0xff]);
+            mobFillRect(n, 4, 9, 8, 5, [0xd8, 0xa8, 0xa8], 1);
+            mobFillRect(n, 5, 11, 1, 2, [0x6e, 0x4a, 0x4a], 1);
+            mobFillRect(n, 10, 11, 1, 2, [0x6e, 0x4a, 0x4a], 1);
+            mobFillRect(n, 5, 14, 6, 1, [0x8a, 0x62, 0x62], 1);
+          },
+          // ---- ヒツジ ----
+          mobSheepWool: function (n) {
+            mobWoolPattern(n, [0xea, 0xea, 0xea], [0xc8, 0xc8, 0xc8]);
+          },
+          mobSheepSkin: function (n) {
+            mobHidePattern(n, [0xd8, 0xc6, 0xb2], [0xc0, 0xac, 0x98], 0.1);
+          },
+          mobSheepFace: function (n) {
+            mobFillRect(n, 0, 0, 16, 16, [0xc5, 0xa9, 0x8c], 1);
+          },
+          mobSheepEye: function (n) {
+            mobFillRect(n, 0, 0, 16, 16, [0x20, 0x20, 0x20], 1);
+          },
+          // ---- 鶏 ----
+          mobChickenSkin: function (n) {
+            for (var y = 0; y < 16; y++) {
+              for (var x = 0; x < 16; x++) {
+                var d = 1 + (Math.random() - 0.5) * 0.08;
+                var base =
+                  ((x >> 1) + (y >> 1)) % 2 === 0
+                    ? [0xee, 0xee, 0xee]
+                    : [0xde, 0xde, 0xde];
+                setPixel(n, x, y, base[0] * d, base[1] * d, base[2] * d);
+              }
+            }
+          },
+          mobChickenWing: function (n) {
+            mobFeatherPattern(n, [0xde, 0xde, 0xde], [0xc4, 0xc4, 0xc4]);
+          },
+          mobChickenLeg: function (n) {
+            mobNoiseFill(n, [0xe3, 0xa6, 0x3c], 0.08);
+            for (var y = 3; y < 16; y += 5)
+              mobFillRect(n, 0, y, 16, 1, [0xc9, 0x8f, 0x2e], 1);
+          },
+          mobChickenWattle: function (n) {
+            mobNoiseFill(n, [0xc0, 0x3a, 0x2b], 0.1);
+          },
+          mobChickenFace: function (n) {
+            mobFaceBase(n, [0xee, 0xee, 0xee], 0.08);
+            mobEyes(n, 3, 12, 6, [0x28, 0x1c, 0x1c], [0xff, 0xff, 0xff]);
+            mobFillRect(n, 6, 10, 4, 2, [0xe3, 0xa6, 0x3c], 1);
+            mobFillRect(n, 7, 12, 2, 2, [0xc0, 0x3a, 0x2b], 1);
+          },
+          // ---- 図鑑に合わせた追加モブ ----
+          mobCatFur: function (n) {
+            mobHidePattern(n, [0x25, 0x25, 0x25], [0x55, 0x55, 0x55], 0.1);
+          },
+          mobCatWhite: function (n) {
+            mobNoiseFill(n, [0xe9, 0xe9, 0xe9], 0.06);
+          },
+          mobCatFace: function (n) {
+            mobFaceBase(n, [0x25, 0x25, 0x25], 0.1);
+            mobEyes(n, 3, 12, 5, [0x18, 0x18, 0x18], [0x58, 0xc8, 0x3c]);
+            mobFillRect(n, 7, 10, 2, 2, [0xe4, 0x9a, 0xaa], 1);
+          },
+          mobCatEye: function (n) {
+            mobNoiseFill(n, [0x58, 0xc8, 0x3c], 0.04);
+          },
+          mobCatNose: function (n) {
+            mobNoiseFill(n, [0xe4, 0x9a, 0xaa], 0.04);
+          },
+          mobBeeBody: function (n) {
+            mobNoiseFill(n, [0xe6, 0xc8, 0x32], 0.06);
+            mobFillRect(n, 4, 0, 3, 16, [0x28, 0x20, 0x18], 1);
+            mobFillRect(n, 10, 0, 3, 16, [0x28, 0x20, 0x18], 1);
+          },
+          mobBeeHead: function (n) {
+            mobNoiseFill(n, [0x33, 0x26, 0x1a], 0.04);
+            mobEyes(n, 3, 12, 5, [0x10, 0x10, 0x10], [0xff, 0xff, 0xff]);
+          },
+          mobBeeWing: function (n) {
+            mobNoiseFill(n, [0xe8, 0xf5, 0xff], 0.05);
+          },
+          mobAxolotlPink: function (n) {
+            mobNoiseFill(n, [0xfc, 0xae, 0xef], 0.05);
+          },
+          mobAxolotlFrill: function (n) {
+            mobNoiseFill(n, [0xe6, 0x49, 0xba], 0.06);
+          },
+          mobAxolotlFace: function (n) {
+            mobFaceBase(n, [0xfc, 0xae, 0xef], 0.05);
+            mobEyes(n, 1, 12, 7, [0x11, 0x11, 0x11], [0x11, 0x11, 0x11]);
+            mobFillRect(n, 6, 10, 4, 2, [0xd6, 0x3b, 0xb1], 1);
+          },
+          mobVillagerRobe: function (n) {
+            mobHidePattern(n, [0x6f, 0x49, 0x30], [0x8b, 0x5a, 0x3c], 0.1);
+          },
+          mobVillagerSkin: function (n) {
+            mobNoiseFill(n, [0xb9, 0x85, 0x62], 0.06);
+          },
+          mobVillagerFace: function (n) {
+            mobFillRect(n, 0, 0, 16, 16, [0xb9, 0x85, 0x62], 1);
+          },
+          mobVillagerEye: function (n) {
+            mobFillRect(n, 0, 0, 16, 16, [0x3a, 0x9b, 0x48], 1);
+          },
+          mobVillagerHat: function (n) {
+            mobNoiseFill(n, [0x4f, 0x37, 0x28], 0.06);
+          },
+          mobWolfCoat: function (n) {
+            mobHidePattern(n, [0xa9, 0xa9, 0xa9], [0x77, 0x77, 0x77], 0.08);
+          },
+          mobWolfFace: function (n) {
+            mobFaceBase(n, [0xa9, 0xa9, 0xa9], 0.08);
+            mobEyes(n, 3, 12, 5, [0x17, 0x17, 0x17], [0x17, 0x17, 0x17]);
+          },
+          mobWolfMuzzle: function (n) {
+            mobNoiseFill(n, [0xc9, 0xc9, 0xc9], 0.05);
+          },
+          mobWolfCollar: function (n) {
+            mobNoiseFill(n, [0xb5, 0x1e, 0x2c], 0.05);
+          },
+          mobGolemBody: function (n) {
+            mobNoiseFill(n, [0xcf, 0xcf, 0xcf], 0.07);
+            mobFillRect(n, 0, 11, 4, 5, [0x4f, 0x7a, 0x4b], 1);
+            mobFillRect(n, 12, 1, 4, 5, [0x4f, 0x7a, 0x4b], 1);
+          },
+          mobGolemFace: function (n) {
+            mobNoiseFill(n, [0xcf, 0xcf, 0xcf], 0.05);
+            mobFillRect(n, 3, 4, 10, 2, [0x5b, 0x5b, 0x5b], 1);
+            mobFillRect(n, 3, 7, 2, 2, [0xa7, 0x2b, 0x2b], 1);
+            mobFillRect(n, 11, 7, 2, 2, [0xa7, 0x2b, 0x2b], 1);
+          },
+          mobEnderman: function (n) {
+            mobNoiseFill(n, [0x12, 0x12, 0x12], 0.05);
+          },
+          mobEnderFace: function (n) {
+            mobNoiseFill(n, [0x12, 0x12, 0x12], 0.04);
+            mobFillRect(n, 2, 7, 4, 1, [0xd0, 0x42, 0xff], 1);
+            mobFillRect(n, 10, 7, 4, 1, [0xd0, 0x42, 0xff], 1);
+          },
+          mobCreeperBody: function (n) {
+            mobNoiseFill(n, [0x38, 0x83, 0x38], 0.09);
+            mobFillRect(n, 7, 1, 3, 4, [0x22, 0x55, 0x22], 1);
+            mobFillRect(n, 1, 10, 4, 4, [0x22, 0x55, 0x22], 1);
+          },
+          mobCreeperFace: function (n) {
+            mobFaceBase(n, [0x38, 0x83, 0x38], 0.09);
+            mobFillRect(n, 2, 3, 4, 4, [0x00, 0x00, 0x00], 1);
+            mobFillRect(n, 10, 3, 4, 4, [0x00, 0x00, 0x00], 1);
+            mobFillRect(n, 6, 7, 4, 5, [0x00, 0x00, 0x00], 1);
+            mobFillRect(n, 4, 9, 2, 5, [0x00, 0x00, 0x00], 1);
+            mobFillRect(n, 10, 9, 2, 5, [0x00, 0x00, 0x00], 1);
+          },
+          mobZombieSkin: function (n) {
+            mobNoiseFill(n, [0x5c, 0x9b, 0x6a], 0.06);
+          },
+          mobZombieFace: function (n) {
+            mobFaceBase(n, [0x5c, 0x9b, 0x6a], 0.06);
+            mobEyes(n, 3, 12, 5, [0x18, 0x25, 0x1b], [0x18, 0x25, 0x1b]);
+          },
+          mobZombieShirt: function (n) {
+            mobNoiseFill(n, [0x27, 0x7d, 0x7a], 0.06);
+          },
+          mobZombiePants: function (n) {
+            mobNoiseFill(n, [0x30, 0x30, 0x5f], 0.06);
+          },
+          // ---- 消滅時の煙 ----
+          mobPoof: function (n) {
+            mobNoiseFill(n, [0xdf, 0xdf, 0xdf], 0.24);
+          },
+          oakDoorLower: function (n) {
+            drawDoorTexture(n, "oakPlanks", false);
+          },
+          oakDoorUpper: function (n) {
+            drawDoorTexture(n, "oakPlanks", true);
+          },
+          spruceDoorLower: function (n) {
+            drawDoorTexture(n, "sprucePlanks", false);
+          },
+          spruceDoorUpper: function (n) {
+            drawDoorTexture(n, "sprucePlanks", true);
+          },
+          birchDoorLower: function (n) {
+            drawDoorTexture(n, "birchPlanks", false);
+          },
+          birchDoorUpper: function (n) {
+            drawDoorTexture(n, "birchPlanks", true);
+          },
+          jungleDoorLower: function (n) {
+            drawDoorTexture(n, "junglePlanks", false);
+          },
+          jungleDoorUpper: function (n) {
+            drawDoorTexture(n, "junglePlanks", true);
+          },
+          acaciaDoorLower: function (n) {
+            drawDoorTexture(n, "acaciaPlanks", false);
+          },
+          acaciaDoorUpper: function (n) {
+            drawDoorTexture(n, "acaciaPlanks", true);
+          },
+          darkOakDoorLower: function (n) {
+            drawDoorTexture(n, "darkOakPlanks", false);
+          },
+          darkOakDoorUpper: function (n) {
+            drawDoorTexture(n, "darkOakPlanks", true);
+          },
+          // ここから他プレイヤー表示用のスキンテクスチャ（マルチプレイ専用）
+          mpSkin: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                d = Math.random() * 0.1 + 0.92;
+                setPixel(n, x, y, 0xc5 * d, 0x8b * d, 0x62 * d);
+              }
+            }
+          },
+          mpHeadSide: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                if (y < 4) {
+                  d = Math.random() * 0.15 + 0.85;
+                  setPixel(n, x, y, 0x2f * d, 0x1c * d, 0x0d * d);
+                } else {
+                  d = Math.random() * 0.1 + 0.92;
+                  setPixel(n, x, y, 0xc5 * d, 0x8b * d, 0x62 * d);
+                }
+              }
+            }
+          },
+          mpHeadFace: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                if (y < 3) {
+                  d = Math.random() * 0.15 + 0.85;
+                  setPixel(n, x, y, 0x2f * d, 0x1c * d, 0x0d * d);
+                } else {
+                  d = Math.random() * 0.1 + 0.92;
+                  setPixel(n, x, y, 0xc5 * d, 0x8b * d, 0x62 * d);
+                }
+              }
+            }
+            // 目（白目＋青い瞳）
+            setPixel(n, 3, 7, 0xff, 0xff, 0xff);
+            setPixel(n, 4, 7, 0xff, 0xff, 0xff);
+            setPixel(n, 4, 8, 0x4a, 0x78, 0xa8);
+            setPixel(n, 3, 8, 0x4a, 0x78, 0xa8);
+            setPixel(n, 11, 7, 0xff, 0xff, 0xff);
+            setPixel(n, 12, 7, 0xff, 0xff, 0xff);
+            setPixel(n, 11, 8, 0x4a, 0x78, 0xa8);
+            setPixel(n, 12, 8, 0x4a, 0x78, 0xa8);
+            // 鼻と口
+            setPixel(n, 7, 10, 0x9a, 0x66, 0x40);
+            setPixel(n, 8, 10, 0x9a, 0x66, 0x40);
+            setPixel(n, 6, 12, 0x6e, 0x45, 0x25);
+            setPixel(n, 7, 12, 0x6e, 0x45, 0x25);
+            setPixel(n, 8, 12, 0x6e, 0x45, 0x25);
+            setPixel(n, 9, 12, 0x6e, 0x45, 0x25);
+          },
+          mpHair: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                d = Math.random() * 0.15 + 0.85;
+                setPixel(n, x, y, 0x2f * d, 0x1c * d, 0x0d * d);
+              }
+            }
+          },
+          mpShirt: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                d = Math.random() * 0.1 + 0.92;
+                setPixel(n, x, y, 0x3f * d, 0xb2 * d, 0xc8 * d);
+              }
+            }
+          },
+          mpPants: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                d = Math.random() * 0.1 + 0.92;
+                setPixel(n, x, y, 0x4a * d, 0x44 * d, 0x9e * d);
+              }
+            }
+          },
+          mpTintWhite: function (n) {
+            var d;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                d = Math.random() * 0.08 + 0.92;
+                setPixel(n, x, y, 255 * d, 255 * d, 255 * d);
+              }
+            }
+          },
+          grassTop: function (n) {
+            var r = 0,
+              g = 0,
+              b = 0,
+              d = 0;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                d = Math.random() * 0.25 + 0.65;
+                r = 0x54 * d;
+                g = 0xa0 * d;
+                b = 0x48 * d;
+                setPixel(n, x, y, r, g, b);
+              }
+            }
+          },
+          grassSide: function (n) {
+            var r = 0,
+              g = 0,
+              b = 0,
+              d = 0;
+            var pix = getPixels(
+              "0g0g70ordrzz0u30g730wa4vzz0xnyl8f11lrk7315qj7jz1fh47pb6553365533033636350335403653650063306333633300635163503655353653535605335031350330553500033033366333433663663535336655335055335553353530355333033503300333336635353663650660554353355635155305303053556333333366353323553060365553063030663533555365534355335530"
+            );
+            for (var i = 0; i < pix.length; i += 4) {
+              setPixel(
+                n,
+                (i >> 2) & 15,
+                i >> 6,
+                pix[i],
+                pix[i + 1],
+                pix[i + 2],
+                pix[i + 3]
+              );
+            }
+            for (var x = 0; x < 16; x++) {
+              var m = Math.random() * 4 + 1;
+              for (var y = 0; y < m; y++) {
+                d = Math.random() * 0.25 + 0.65;
+                r = 0x54 * d;
+                g = 0xa0 * d;
+                b = 0x48 * d;
+                setPixel(n, x, y, r, g, b);
+              }
+            }
+          },
+          leaves: function (n) {
+            var r = 0,
+              g = 0,
+              b = 0,
+              a = 0;
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                r = 0;
+                g = Math.floor(Math.random() * 30 + 100);
+                b = Math.floor(Math.random() * 30);
+                if (Math.random() < 0.35) {
+                  a = 0;
+                } else {
+                  a = 255;
+                }
+                setPixel(n, x, y, r, g, b, a);
+              }
+            }
+          },
+          oakPlanks: function (n) {
+            var r = 0;
+            for (var y = 0; y < 16; y++) {
+              var a = (y & 3) === 3 ? 0.7 : 1;
+              var d = (y & 7) < 3 && a === 1 ? 0.85 : 1;
+              for (var x = 0; x < 16; x++) {
+                var mid = x === 8 && (y & 7) > 3 && a === 1 ? 0.85 : 1;
+                var rit = x === 15 && (y & 7) < 3 && a === 1 ? 0.85 : 1;
+                r = (Math.random() * 0.1 + 0.9) * a * mid * rit;
+                setPixel(n, x, y, 190 * r, 154 * r, 96 * r);
+              }
+            }
+          },
+          hitbox: function (n) {
+            for (var x = 0; x < 16; x++) {
+              for (var y = 0; y < 16; y++) {
+                setPixel(n, x, y, 0, 0, 0, 255);
+              }
+            }
+          },
+          dirt: "0g0g70ordrzz0u30g730wa4vzz0xnyl8f11lrk7315qj7jz1fh47pb6553365533033636350335403653650063306333633300635163503655353653535605335031350330553500033033366333433663663535336655335055335553353530355333033503300333336635353663650660554353355635155305303053556333333366353323553060365553063030663533555365534355335530",
+          stone:
+            "0g0g40sywflr0wb8hdr0zdjj0f13tzldr3333211210112222221212222220012121001110111222222233232233222111122111212333312223222222211010131223331331112222110010112211122233323223332222212232223332233332021211001212211122222332222233232111232112200101332112211122111321122222222233332222221123322122",
+          logSide:
+            "0g0g60fl1ssf0l5j1fj0qftm2n0wa7mdb14cs7wf16az8xr3143304330341432315230523034133230223052313113324032313232301342413230325232314343134131524131432313422343433143230343243342324331053324324242433315332332414303333432303231430331343230533053135133424052303323531343314231333343143340313114334314134131331432",
+          logTop:
+            "0g0g90l5j1fj0qftm2n0wa7mdb0z2esxr15quebj189da7z1cpma671f7ppfj1hzyayn1012101120110111077776768667777017334454555544811738877776777471164766666666756107576445544674601646636666466471165764655656756116576465464674610657646666566460164764434556756116576666666674610757767777787460175454444444447117776676686677711011101120110211",
+          bedrock:
+            "0g0g509gy58f0e7f7r30o8fd330rkrev31627mkf3111124324211212133434341443012110110111412224232433202422111112014111121134433112221221102211014432344323443410222122211011213234421122344344442110121213211143334134410144431102221123442334402111321134111112343420211101234433211211234421121011044312301123",
+          glass:
+            "0g0g50ybfh8f0znkiyo12rzshr1au95hb1lytipr4444444444444443411111111111111341114111111111104114111111111110413111111111111041111111111111124111111111111110411111111111111241111111111111124111111111111112411111111111111241111111111111123111111111111412411111111111411231111111111111133323222222222233",
+          cobblestone:
+            "0g0g60muaccf0r0pekf0un11q711vr5rz1a8mosf1ef1r0f2144011454313543145330554330132314342143342101321132113232134310021354131154443152453321033543234313433211243215332233213541231321542213533311021543232233121341323231101221044532211235411035532354215434213323154331432332113244323212332143111311232121135432",
+          mossyCobble:
+            "0g0gb0muaccf0mupnnj0p38xdr0r0pekf0rbmj9b0un11q70w1wkxr0y07svz11vr5rz1a8mosf1ef1r0f4199211276438a9619a8812764813858398951644251118533852182851464110531183233866642a176895308948428981498852118851988111851664158385117641484642305126244558824124185442111155214698112124761318998127651764653885847488164588511858685851588531841183352111338a984",
+          stoneBricks:
+            "0g0g70p2gyyn0rkrev30tj2nlr0xf9ou70zdjj0f12psrnj17g8flr5666666666665550645455555444445065454444445534406434554345434330632334544334324053244333345324302222222222222220110011000111111166666650566666663555544065455554544544306435354445544320634344454444343053345433332322305443344322222220222222221111110000111111",
+          mossyStoneBricks:
+            "0g0gc0mupnnj0p2gyyn0p38xdr0rbmj9b0rkrev30tj2nlr0w1wkxr0xf9ou70y07svz0zdjj0f12psrnj17g8flrab3668863b88a680b9a28683a9999332ba926363996a2931b9792a679a979721b737793993697591a72397773632297075225752332277924410441110000444886bbba1abbbb6883aaaa991ba9aaaa6a99a9971b97a7a399aa99351b797992a99997371a689a97777573371a897799755223791722757754000041110004400",
+          bricks:
+            "0g0g90vz62nz0yhavi712oqn7j13rinsv173m8lb193f4zj1b1w1rz1d7u7sv1j1u51b7742888777458777443513444435144410060033100503112256522225565222887747458777474214444315133333151341110600133105522225565522225677458887474588774435344444153444110511331106133325565222225652224777474287774745144444353444441501111106011111065222225655222566",
+          coalOre:
+            "0g0g70ehg7wf0hjr9j30j7xaf30sywflr0wb8hdr0zdjj0f13tzldr6556544543445666554536666553335454331453344511556665655105655644455443346545645556553215542143464552111065105555433556663334466661156543215455645565354100056665354514334663354455555666634106655443366412111054665105556005455554456665566544455555554655555566",
+          ironOre:
+            "0g0g80sywflr0wb8hdr0zdjj0f13tzldr1cpl2bj1gbvabj1o4exa71qwyvb33223211210112333221203333220002121005120011265223332322642322311122110013212312223220762217510131227655432542222100223330001133336523210762122312232021644423332021251001330021122222333301643322110033167666421332542223442122221123332233211122222221322222233",
+          goldOre:
+            "0g0g80sywflr0wb8hdr0zdjj0f13tzldr1x01czj1y6gem71z13ncv1z141z33223211210112333221203333220002121005120011265223332322642322311122110013212312223220762217610131227655432542222100223330001133336523210762122312232021644423332021251001330021122222333301643322110033167655421332642223442122221123332233211122222221322222233",
+          diamondOre:
+            "0g0g80h634zj0sagdtr0sywflr0wb8hdr0zdjj0f13tzldr1845xbz1ndl24f5445433432334555443425555442224343221342233461445554544604544533344332235434534445442764437632353447611054104444322445552223355556145432764344534454243600045554243413223552243344444555523605544332255367611043554604445004344443345554455433344444443544444455",
+          redstoneOre:
+            "0g0g90sywflr0wb8hdr0zdjj0f13oi67z13tzldr15wexa71b68mbj1f24cfz1yr4gsf4224211210112444221204444220002121005120011285224442422832422411122110014212412224220862218610141227655342532222100224440001144448524210862122412242021633324442021251001440021122222444401834422110044168655321442832224332122221124442244211122222221422222244",
+          lapisOre:
+            "0g0ga04hvenz04hvl6n04ihywv066fd3306r2ozj08z4sfz0sywflr0wb8hdr0zdjj0f13tzldr9889877876778999886669999886668787454386777813889889926329989977788776679867978889866428862576797861242398238888723679978767799993189872643386678998687222236258686627661237725788300799668893588779906612366339998700381039799887783339899877788888899888888899",
+          emeraldOre:
+            "0g0g7004swsf06mdmv30sywflr0wb8hdr0zdjj0f13tzldr1ohjdhb5445432232334555443445615442334343223310333422445555225555546133344361324555104445441061243255353445551054434444332232552323355555545461442244534444441053615224243433223310361344444556155551044223455103322553261334455444344441045554455433344554443544444455",
+          coalBlock:
+            "0g0g501e50xr03md24f05ul3b308mtq0v0bf3ri73322122002210012222121000210123321000122000022221001243222202210001233222100210020222221000001220132211001122222022210122343221002110123322210000012123221103200212122210002211232102112210012230002113432123322000123420023221000123210012221001222212212221000",
+          ironBlock:
+            "0g0gb1dawbnj1fj5rlr1hrdssf1m7r1mn1nlyvwf1pa4wsf1qe8xdr1s2ey9r1t6iyv31tqkz5r1ver01r32233333333222232aaaaa9998777772277777777777777105555555666444402aaaaaa999777771277777777777777105555566664444402aa9999977777771277777777777771055555555566644402aaaaaa999977771277777777777777105555556666444402aaaa9999777777127777777777777712222222112111111",
+          goldBlock:
+            "0g0g91kr8um71mphb0f1w77ain1xakkqn1ypvwu71yr43jz1yzk7pb1z0cef31z10mwv2222332223333221285577888776688125664877623324812564877462224471374777462264467137777462267762302877444667762330287444664462232037444664466222613744664466662461364667766666742032667762262776203267762332446261334462332666224132322332662264701101100011001100",
+          diamondBlock:
+            "0g0g90434min061d2in0h634zj0l2fpxb0sagdtr0vckf0f1845xbz1ndl24f1z141z33333223332222331378866777664477138445766432235713845766543335561265666543345546126666543346643203766555446643220376555445543323026555445544333412655445544443541245446644444653023446643343664302346643223554341225543223444335123233223443345601101100011001100",
+          redstoneBlock:
+            "0g0g50vx660v153407319j36671gh49a71runlz34444444444444444433433222334333443342202222232344332311001120234443211012011244443210000000042344302100000011134421100000000122442231000000111344324110210111234432110004001224443321101001110344322211111122224443124211022323443334433223333344444444444444444",
+          lapisBlock:
+            "0g0gd05lqqkf06zt0xr07js8hr07tw35r084kzr308e6ein08e99fj08yjpq708ys8ov0an2j270c0w4cf0dp94hr0fdf5kv98999989cb848484878b78736733677197b8867767623765967877377863366597687666378a63759a77776636a7736197a767676236763596763666a6233625c636636376632775c633687363332371963237873676327186672236338763619763722332677630877633332336667143766633633367708111111610220000",
+          emeraldBlock:
+            "0g0g606lfrb306mdmv307ei5fj07xmdbz0iaro5b10c5ptr0000000000000002055555454551144305000000200002430404555411114243050500000002425305050555445212130405054411421203040405451142120305040411020202130404041122120213042105410112420301212222222242030405510000441213012222222222224301011001110014532333333333333332",
+          tntTop:
+            "0g0g61ou6qrj1ao4xz313jyl8f14a4flr0nyecxr00000730001000100010001022302230223022302430245542304231334134345334333000140414055400102230553424452230244025454544523133345555543153300010055540445010244555555235423022305555243522313335353543543330004004145544001024302230423042302230223022302231333133313331333",
+          tntSides:
+            "0g0gh1ou6qrj1ju5lvj1eu4h6n1ae5ce71hm61of1ao4xz314a4flr1p03wn31ldqupr00000731cqvq4f1ek4vsv18g3z0f12m41z30xc3bwf1ig4ttr1dg53pb0123012301230123045604560456045604560456045604560456045604560456045604560456045677787777877887788799989879899978888988998988988888898898998898888aa98a9889889aa8aa8aa8aaa8aa8aaabcdebcdebcdebcde045604560456045604560456045604560456045604560456fgc6fgc6fgc6fgc6",
+          tntBottom:
+            "0g0g41ou6qrj1ao4xz313jyl8f14a4flr0001000100010001022302230223022302230223022302231333133313331333000100010001000102230223022302230223022302230223133313331333133300010001000100010223022302230223022302230223022313331333133313330001000100010001022302230223022302230223022302231333133313331333",
+          acaciaLogSide:
+            "0g0g60ma181r0oi99fj0pcavi70t8nim70y9464f139ktmn3143304330341432315230523034133230223052313113324032313232301342413230325232314343134131524131432313422343433143230343243342324331053324324242433315332332414303333432303231430331343230533053135133424052303323531343314231333343143340313114334314134131331432",
+          acaciaLogTop:
+            "0g0gb0j7rlz30kvxmgv0ma2nen0o889hb0t8nim713rcxdr16jehof18hk3r31c3oo3j1fprugv1hy2osf432332211231433449999898a889999329556676777766a2395aa999989996910869888888889782197986677668968318688588886886932879868778789784487986876868968448798688887886833869866567789782287988888888968219799899999a96811976766666666691099988988a8899933412233444322114",
+          acaciaPlanks:
+            "0g0g711t8qgv13rcxdr16jehof18hk3r31c3oo3j1fprugv1hy2osf5456666656666652554423455544553345554543333445522112210011010010563666636665443545543432344555543345444255544333001121000011121056654466656666535455554333434332654433334444335300122100012110006556655366646566445533433555544443345432554333330110012221010000",
+          birchLogSide:
+            "0g0g80f1fcov0qqliwv1gxap6n1o60u7z1ptrf271uar6db1uum5mn1z141z36643366634663366346666777634443677744367666636777732100136777737366321101377631211336344363331001266344677766532343777777334556376336775577775777764455577766336336777766634477636777767777577634436633667553210026677763443100000133377761132116331677764336336",
+          birchLogTop:
+            "0g0ga0mk6h3316m5am719xxgqn1cg9ce71f8hx4v1jowirj1nv4jcv1nvimm71tgjy7z1z141z39818811001809889966665657556666816223343444433718627766665666360153655555555645106465334433563580535525555355368154653544545645995465354353563599546535555455358853653323445645115465555555563510646656666676350064343333333336016665565575566688901188999811009",
+          birchPlanks:
+            "0g0g717znmrj19xxgqn1cg9ce71f8hx4v1jowirj1nv4jcv1nvimm75456666656666652554423455544553345554543333445522112210011010010563666636665443545543432344555543345444255544333001121000011121056654466666666535455554333434332654433334444335300122100012110006356655366636566445533433554544443345432554333330110012221010000",
+          darkOakLogSide:
+            "0g0g60besef30dcwlbz0e6y70f0hj7ev30klcs8v0oho0e73143304330341432315230523034133230223052313113324032313232301342413230325232314343134131524131432313422343433143230343243342324331053324324242433315332332414303333432303231430331343230533053135133424052303323531343314231333343143340313114334314134131331432",
+          darkOakLogTop:
+            "0g0gb08ml79b0auqebj0dcmqdb0e6y70f0f117gf0g4r4730h8wirj0hj7ev30kb0idb0lz2akf0n393wf741441100140744779999898a889999419225565666655a1492aa999989995903859888888889681096985566558958408588288885885941869858668689687786985865858958778698588886885844859855256689681186988888888958109699899999a95800965655555555590399988988a8899944701144777411007",
+          darkOakPlanks:
+            "0g0g70bejy0v0dcmqdb0g4r4730h8wirj0kb0idb0lz2akf0n393wf5456666656666652554423455544553345554543333445522112210011010010563666636665443545543432344555543345444255544333001121000011121056654466666666535455554333434332654433334444335300122100012110006356655366636566445533433554544443345432554333330110012221010000",
+          jungleLogSide:
+            "0g0g90h96cxr0htdywv0m9k4xr0ne277j0orqc5b0rkbldr0sxvim70wunksf0ys83cv4688422222666444444114414441001111137510011441866644668842422224146644411143573444422235311010006646442222444886101000466412222444688411068844441122575311222100755444666664355741100112241201661144866643341111623533422111444644111004661664444664122244442222",
+          jungleLogTop:
+            "0g0g90h96cxr0htdywv0rkbldr0ys83cv160fym7188mku71batekf1f77h1b1h5ei2n3212210011213223377776768667777217444454555544812748877776777470164766666666756107576445544674620646646666466472165764655656756336576465464674633657646666566462264764444556756106576666666674600757767777787460175454444444447117776676686677722310122333211013",
+          junglePlanks:
+            "0g0g70sxkd1b0xdxkov160fym7188mku71batekf1f77h1b1h5ei2n5456666656666652554423455544553345554543333445522112210011010010563666636665443545543432344555543345444255544333001121000011121056654466666666535455554333434332654433334444335300122100012110006356655366636566445533433554544443345432554333330110012221010000",
+          spruceLogSide:
+            "0g0g60csc9vj0cskpof0dmmb5r0geuxof0lf4i670nnb4sf3243304330342431325130513034233130113051323223314031323131302341423130315131324343234232514232431323411343433243130343143341314332053314314141433325331331424303333431303132430332343130533053235233414051303313532343324132333343243340323224334324234232332431",
+          spruceLogTop:
+            "0g0g80ix87pb0nnb4sf0p1n6db0qzu7zz0v5xypr0xy569r106bshr11ueyv31012101120110111066665657556666016223343444433711627766665666361153655555555645106465334433563501535525555355361154653533545645115465353353563510546535555455350153653323445645115465555555563510646656666676350164343333333336116665565575566611011101120110211",
+          sprucePlanks:
+            "0g0g80nnb4sf0p1n6db0qzu7zz0v5xypr0xe36rj0xy569r106bshr11ueyv36567777767777762665523566655663356665643333556622112210011010010673777737776553656653532355666653356555266655333001121000011121067765577777777636566665333535332765533335555336300122100012110007367766377737677556633533665655553356532665333330110012221010000",
+          sand: "0g0g61m6x62n1nb9nnj1opn5dr1r80f7j1scbi0v1u0izgf4223213232132313122121130142502432011422222121122331213133132122125213232322122321223332123122121421151211022121212212212111242112322310131232124212221120212231202321232232012311223212331112121213132145321123323230232323221223235332323203223232332321223232",
+          gravel:
+            "0g0g80rufq4f0vqwlbz0zxiprz125i9rz15rvcan1627mkf1d0twqn1dackxr0341152512122521522122312102333522103133522351352232321522512322132741122210253202140133526552213104226515530122553253522311225353521223310256122311652152322132123553102521325022533562113225212132222537415525331025232422215235323311243310351274122232321212",
+          blackConcrete:
+            "0g0g40149on3028826702882yn028dp8f1330112022012232303130022112212111032203010022012122012222321221011223213030101033110011212233120230013131003200032022012002002112233122202312230200102211312102222122132011021201223320211021220121122122321331201102120210001220112022023302312210123220102110",
+          blackWool:
+            "0g0gf0149on3028826702882yn028dp8f03cc2rj03cc3jz03chptr04gg3cv04glqf305kk3y705kpr0f06oo4jj07ss54v08ww5q70a106bj46348b45ab13993299eebb7742570367bc77dc97bcbbdeb996bc768c47cc96ec9749bb115953bb31314c414641672547eebb8879bea7eeb966eebacc45bca9ccbb35ca4657528733577b117949ee7beeccbbecbacb799839349966bb445911796611cd318b9bee92badecb9717bc77cedc97c99beb559b6424c946cd76ac44bc",
+          blueConcrete:
+            "0g0g30c98pof0c98qgv0c9ecqn1000001101000201011001000101120101211111010200000001000110100100220110011001121111001100100100010200102101101000000011110001101010101011020111110000000101121111101100100100010110111010210111001101000100000111110100101111000120000010100000110001200110010002",
+          blueWool:
+            "0g0gj0c98pof0c98qgv0c9ecqn0c9edj30ddcr270ddidbz0ddie4f0ehgrnj0ehgsfz0ehmepr0ehmfi70flkt1b0flqfb30flqg3j0flw2db0flw35r0gpugov0gq02yn0gqbd3335237c44ac12992289iidc6632460256de67ge96cebbhic985ce657e46ee85ie9648cc114942cc21214e413541562436iidc7769dia6iic955iicaee34cea9eecb24ea4546427622466d116949ii7biieecciecaed699728249955cb344911695511eg217c9bii92bahiec9617be67eigf86e99cid449b5324e935eh65ae34de",
+          brownConcrete:
+            "0g0g30pl5gqn0qp3u9r0qp9hbz0211211202222221222122211211122121011102222222212211200222112101121111211111222121222122122221201212121222112122222221220222222122221201121212022122122110221211122221211011221212121010121011111212122221121221222212122112112112211010222111121211220222221122",
+          brownWool:
+            "0g0gi0qp3u9r0qp9hbz0rt7uv30rtdh4v0sxbunz0sxbvgf0u1a8zj0u1fv9b0v5e8sf0v5e9kv0v5jvun0w9i9dr0xdgmwv0xdm9z30yhkni70yhq9rz0zloo3j0zluadb35228d45bd12aa219bhhed7721570257ef77gfa7dfccghdb95df758f47ff95hfb749dd115a52dd21214f413541571526hhed887aehb7hhda55hhdbff25dfbbffdc25fb4557518722576e117b4bhh7chhffddhfdbfe7ab82924bb55dc245b116b5511fg218dachhb1cbghfda717cf77fhgg97fabdhe55ac5214fa25fg75bf24ef",
+          cyanConcrete:
+            "0g0g305objsv05obklb05oh6v31112010122111202100121222111122012212211101111202102221210222122211111211221111011021102021212212220211021022022201210110010212210211110202101010201110112020221222112102111202212110222110211221001010211001221212202222122111221102211100222112011211120220211",
+          cyanWool:
+            "0g0ge05obklb05oh6v305omt4v05omtxb05osg7305oy2gv05p3pj305p9bsv05p9clb05peyv305pkl4v05pklxb05pq87305pq8zj242269347912662167dda95521450145ab55cb659b88cd97649b546b35bb64db7536991146419921113b312431451424dda96656ad75dd9644dd97bb249b77bb9814b73445416521454a115737dd58ddbb99db97ba56762623774498234711474411bc116968dd7187cdb965158b55bdcc65b679da44684213b624bc547b23ab",
+          grayConcrete:
+            "0g0g30fbnhfj0f1mha70flohkv0010000111000010010100110110001111011011101111000000111001010110010101101111211201010101100011111000001111111101000000011001000100011011001010101001000100000111100000011010100001001000001110000001101010000001020001100000101200100100010011000102100001020000",
+          grayWool:
+            "0g0gd0ehlvr30flk9a70flpvjz0flpwcf0flvim70gptwxr0gpzjzz0htxxj30hu3jsv0hu3klb0iy1y4f0iy7ke70iy7l6n333359337803663157cca85531350135ab55cb658b88cc87539b545b35bb53ca7535990036329930103b303330350335cc995556ac75cc8633cc87ba339b77ba8813a73435305532355a005737cc58ccab88cb87ba56753533773498333700574300ac205968cc7087cca865058b55bccc55b679ca33684313a634bc537a33ab",
+          greenConcrete:
+            "0g0g20k2mku70k2s73z0001000100111100101010100101101101101100111010010111001001011000100001100011000100101010110101111010000001011001001000100001010110101110010011010000101011110000010110101000000001010000110101011101000111110011101010011000111100001100011000000111101001101100",
+          greenWool:
+            "0g0gh0k2mku70k2s6bj0k2s73z0l6qjun0l6w64f0l71rlr0mb054v0mb5qm70mb5ren0nf9qf30nffcov0ojdq7z0ojjbpb0ojoxz30pnnbi70pnsxrz0rw0y6746447c45ab1499419aggcb8841580168ce88ee98bebbfgba96ce867e48ee96gda849cc125953cc41114e424642681546ggcc7789cga8ggb966ggbaed45ceaaedbb15da4658517843586c21894agg8bggdebbgebaec89a749449966cb445a116a6621de327c9bgga1bafgdb9828be88egee98e9acgc559b6414d946ef86ad44ce",
+          lightBlueConcrete:
+            "0g0g3090ti4f090z4e70a4xipr2120111111121222222121122112211121121211112221221111102221122212112021111111122111112111112121211222221111122121212121112021122112211121211211111121220111212121111121222001122211222221022122111011221111111021211221211211121112212111111122121111211112222111",
+          lightBlueWool:
+            "0g0gq090z4e70a4xipr0a534zj0a58r9b0b974sf0b9crun0b9ie4f0cdgrnj0cdmepr0cds0zj0dhqein0dhw0sf0dhw1kv0em01dr0em5nnj0fq9o8v0fqfain0gudou70gujb3z0hyhon30hynawv0hynbpb0j2lp8f0j2rbi70k6pptr0latpmn7b57fm89ik26ff63fippnkdd739d04benodepogdkojjppkifblodcfo8doofbpoie8fml21af95mm62428o817b81bd397cppmlffefnpidppkgbbppkioo79loiiookj4aoi8cad93fd55adcn22dh8ippejppookkpokiondfif6f68hhbcmj78ai22cicb22op51fmfjppi3jippokfd2ejoeeoppofdofilpn9agjc738og7copebio78no",
+          lightGrayConcrete:
+            "0g0g20yjgg730yjggzj1000110001001010100010000000011101100010001001011010001100101010001000000000000010100000000100010100000000001010100010001000000000100000110000100001100000011101110001001011001001001001011000000000011001001001001010000000010000000010100110000000001000001001",
+          lightGrayWool:
+            "0g0gi0yjgg730yjggzj0znkgsf0znkhkv10rohdr10roi6711vshz311vsirj11vy5tr12zwjcv12zwk5b1440jy7144670f1584kjj1584lbz16c8l4v16c8lxb17gclq745339e55bd1399329bhhfd7732570257ff78hfa7dfcchhdb95df769f57ff95hfb759ed115953ee31215f514551572537hhed9979fhb7hhda55hhdbff35dfbbgfdc25fb5657529733577f117b5bhh7chhffddhfdbgf79b93935bb56ec355b117b6511fh319e9chhb2cbhhfd9718cf78fhhg97f9bdhf55ac6325fa36fh75bf35ff",
+          limeConcrete:
+            "0g0g30ppd5a70ppirjz0qth5331121111111100111111111110111110111010211100110111211111211101111112111111111111101110111011110211011011110111110102111110100111000110112112110211112112112111212111111111111111011111011100101111111111212111111111112010011011221111111110111120011110111101111",
+          limeWool:
+            "0g0gg0ppirjz0qth5330qtmrcv0rxl4vz0rxqr5r0t1p4ov0t1uqyn0u5t4hr0u5yqrj0v9x4an0va2qkf0we143j0xi53wf0ym3hfj0ym94hr10uh5of35237c44bb1299228affcb6632460257cd67ed96bdbbefba85bd657d46dd85fca748cb104942cc21214d403540562435ffcb7779cfb6ffb955ffbbdc34bdbaecbb24cb4546427622465c01694aff7bffcebbfdbbec69a728249955cb344a105a5501ce207c9bffa2bbefcb9607bd77dfee86d9abfc449b5324c935de75bc34cd",
+          magentaConcrete:
+            "0g0g419jw2rj1anugan1ao02kf1ao03cv2233313332221332333333233213322333223332331233333313323103121223222131233211303233130230322231223302323103002220333103232232223333313231221331233333231232212303302330122232333333332123320111033031332321233232303322232223332223231233212323332233222231230323",
+          magentaWool:
+            "0g0gs1ao02kf1ao03cv1brygvz1bs435r1bs43y71cw2hhb1cw83r31cw84jj1e06i2n1e0c4cf1e0c54v1f4ainz1f4g4xr1f4g5q71g8ej9b1g8k5j31g8k6bj1hcijun1hco64f1hco6wv1igmkfz1igs6pr1igs7i71jkw7b31jkw83j1kp08ov1lt49a71mxdwxr6945dl77ij14ff43ehrrmjba537a039cmoacqogajojjqrjhe9koa9do7booe9rnhc7elk118f74ll41317o7169719a275arrmkddcfmribrrjg99rrjion57koihonjj38ni798a72db448bam11bh7hrrcjrrnojjrojiomafhd4e47hh99lj578h11ah9911nq41dlfjrrh2jiqrnjfa1cjoccorqpebofhkrm78gj9537ng59oqc9in57mo",
+          orangeConcrete:
+            "0g0g21p59iwv1q97wfz1011110111101111111011111110000111101110100111111110011111011001001101110110111111111110111111011111101110111111110111111111111111011110111101111011101101101111010010111111110110101110010011101111111010101001101111111011111110111111111001111111101111111111",
+          orangeWool:
+            "0g0gm1q97wfz1rdbw8v1rdbx1b1rdhjb31shfwu71shfxmn1tljxfj1tljy7z1tlpkhr1upnytb1uptl331uptlvj1vtrzen1vtxlof1vtxmgv1wy1m9r1wy1n271wy79bz1wycwe71wyijgf1wyo5q71wytssf46239f55de02aa219dllhe8731570268hi79kib7eieelled96fi779i58ii96lhd859ff005a52ff20205i504650671537llgf998ahld8lleb66lledih35fiddihee25hd5757519822587h008c5dll9ellhieeliedih7ad92925cc67fe355d007d7600hk209faelld1edllhea709ei89ilkj98iadflh55be7315hb37il86dh35hi",
+          pinkConcrete:
+            "0g0g31ltks8v1mxj5rz1mxj6kf11222121211122111112112112111221121112211111111212112121111222111111121121211121111111111111121112122211211111112122111121011102122112111221112111122121112111102112112112111111111212122212111211111122122111212111112112122111111111111211121112112121222122111",
+          pinkWool:
+            "0g0gv1mxj6kf1o1hk3j1o1n6db1p5r6yn1q9v6rj1q9v7jz1rdz7cv1re4uf31si37y71si8u7z1tm78jj1tmcutb1tmcvlr1uqgven1uqmigv1uqs4qn1vuqj271vuw5bz1vuw64f1vv1se71vv7fgf1vvd1q71vvd2in1vviosf1vvipkv1vvobun1vvocn31vvtywv1vvzlz31vw588v1vw591b6a46em78jk25gg53fjuuokdc638c03adoqcesqhckqkktukjfalqcbeq7dqqfaupjd7fml219g83mm52327q716a71ac386buunleedgoujduukhaauukjqp68lqjjrpkk39pj7b9c83ed439dbo12di7juuekuuprkkuqkjrocgje5f57iiabmk679j22bjba12ps31emgkuuj3kjtupkgc1ekqdequssfdqgjluo89hkb637ph6bqtdajp67oq",
+          purpleConcrete:
+            "0g0g40qo16v30rrzke70rrzl6n0rs57gf3222322033323333333312320220233231302222232332333202332233033330333322320012333323333330233022223332223332223232323303323233332332021220323110033223333322032332312323332322322202232223033232221223233023333332022233332332233232023333233223032323332323323332",
+          purpleWool:
+            "0g0gm0rrzl6n0rs57gf0sw3kzj0sw3lrz0u01zb30u07lkv0u07mdb0v45zwf0w84dfj0w84e7z0xc8e0v0xc8etb0yg6scf0ygcem70zkasxr10o96gv10o979b10oetj311sd72711sd7un12wh8fz154uxhb47349e45ce13aa32acllfe8742570279fh79jhb7ehddkleca7eh779h48hha7lgc94aee116a52ee31214h414741771547llfe999aflc8lleb77llechg45ehcchged26gc4767519832687f118c4cll9dllgheelhechf7ac93a34cc77ed446c117c7711gj219eadllc1dcklgea719dh99hljia8hacelf56bd7424gb47hk97cg44fh",
+          redConcrete:
+            "0g0g112voa9r0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          redWool:
+            "0g0gd12voa9r13zmnsv153l1bz167jev3167p14v17bnenz18fls7319jprzz1ano5j31ano6bj1brmjun1brs64f1f3yku7241258227712662157cc9754212401459b45bb647b77bc77548b445b25bb54ca7525881036218821112b202420441224cc8855569c75cc7644cc77ba228b77ba7713a724342155113549015627cc57ccab77cb77b946752522664487223711474401ab105867cc7177bca764057b55bcbb55b678c923674212a624bb547a229b",
+          whiteConcrete:
+            "0g0g31ktui9r1ku04jj1lxyi2n1121212211221121111221111121122111211111121112111212112211111211212222111111221112211112101110211111122211211211111111212221111112212121212222111121122211111111222111111112121222121111111111211121221112221111121222121112212122111221211212111121221211221212",
+          whiteWool:
+            "0g0gn1lxyi2n1lxyiv31ly454v1n22inz1n22jgf1n285q71o66j9b1o66k1r1o6c6bj1paajun1qeekfz1ricyrj1riil1b1smgykf1smmlmn1tqkz5r1tqqm7z1uuozr31uuumtb1vyt0cf1vyynen1x2x0xr1y711j37a56dj89hi26ee63egmmliba639a04acllacmlfailiimmigeajlaadl8blleamlgc8ejj219e94jj62429l817a81aa396ammkjddcelmhbmmifaammihll69jlhgllii49lh8a9a93db549bal12bg8gmmcimmlliimlihllaegd6e68ggaaji689g22agaa12lm41djeimmg3ihmmliea1cilcclmmmeblegjml99fia638lf6almcahl68ll",
+          yellowConcrete:
+            "0g0g41to1w5b1us09of1us5vy71us5wqn2111111122222221232021021213122222211020112110121211022201012212122222312211221122213110202011133121132211112221221211211111112120231210211111201132001211212111211102220222021102211223011100222121202222222132111211111112111112021121120222221222011012122121",
+          yellowWool:
+            "0g0gj1us5vy71usbj0f1vw9wjj1vwfitb1vwfjlr1vwl5vj1vwl6nz1vwqsxr1x0p6gv1x0utj31x10fsv1x10glb1x163nj1y54h6n1y5a48v1y5a51b1y5frb31y5fs3j1y5lf5r45239e44bc0299219biiec7731470158eg78hga7cgcchicb95dg759g47gg95ifb849ed005942ee20104g404540571436iied9989eib7iica55iicbgf34dgbbgfcc15fb4557419722576e007b4bii8ciifgccigcbge79b92924bb55ec345b006b5500fh209e9ciib1cbhifc9708cg88gihh97g9bdie45ac5314fa35gh85bf34eg",
+          obsidian:
+            "0g0gz04gg45b046f3sv03we3un03we41r02i92in046f3zz04gg4xr04qh5vj04gg3y704qh3wf02sa2nz04gg2kf046f56n02882db0f11iin04gg54v02882670gp7jen02i92pr0g55j3z03we3nj08clrsv050i4n303md3pb04gg4cf03md33z096os8v04gg2rj0jhhkvz02882kf04gg4jj03we32702i91xb04gg3cv03md3i700012031045678402944abc0de00fgh00ijhh2k4hlmnghlop4lq2rbsll10t50uvwloxxy0by6iluou00xiw4d40ki0o0k10r6ohhhhx4hkdwt1f0wy0ll7mwlgehl714hl5uqlo1fdll1mk00fo80q5yxtlk00b0u510uc04270i0074a011014h5odhl00hjq5bckwjl0ox1170llfgl04qllouumo80lo0p5illllo5n010cou00o6xu005f",
+          glowstone:
+            "0g0g71yyh24f0xy6j9b0lzaoe70vr21a71hffapr1z141z31xbhjpb0122220133300413154230452301654211231321233244233230113230132233230466420412330021165561452230563224660212331462333210232301312304132123304123305662323014542330112333332141233222312300321231333304232153230412306562324230454231654123223111123244112333322223",
+          netherrack:
+            "0g0gz1hybegv0lonbwf0qf1kvz11tk6pr1a5m3un0vz1x4v0oz7x8f0dweygv0be7bwf0gnmxa707s1bsv10d15a71cohkhr14lpzwf13roe7z0msn4730sv524f0q36arj0z15wxr06e3cvz1f6701r0puzklb137jgu70v50bgf0u0z4e71ocn7r305k5zi70op8bun17xuzun0sn3z0f10fhzi716tiinz1hz21a70w92xa71azp4an044vw5f11b04x1y00493a10b16d6golyl5381b0h8ji6829ei1j2ytsc71871kblp0m20eea2vey1cb2ren2og37kpudmlq86352la7ftgk323r9538fv011287d679bnq2bbcv4knf17qppi10bh749piw2fp661bc35j4535ia21gx29y3la35s589k19704878at61a0g35m20ul0by2atbk6s6i7o8akhor919cgdu8744u7fj894c1m7770",
+          craftingTableTop:
+            "0g0gz1cohgqn192cv7j0nd8r2706yi0hr03w9szj1e3lon30nd7chr0byvtof078j0n317xqjun0m8l0qn1bkdg5b0lew35r0kuu3270mt5c730l53jen06oh0cf1cegglb1c4fgfz18sbv9b18i9gcf1aghvy719mevpb0n36ccf0n37qwv050cetb18saghr1d8jh8f18iauwv137jdhb1d8jh1b1dikh6n19wfvnj0nn8cn306yglq733433y444334838835570000bi00755g457j1k1kl111175337mnc222cd2o2174phq299e00d9r210340s201dt1ft9ok034016ef66c2fdn104401x0120061b21083092016002j02sr33utcef22c2fe2q03gi1d91f1td1v21034h1290eh0e9v2w0g471x2d6222x261744571w111k11ml754p5570ubb00b0755338483aaaaaa34443",
+          craftingTableSide:
+            "0g0gw06yi0hr189da7z0ciwfen1e2mhhb0pat88v0ogrmkf1gbtptr1e3lon30w0dnun0aktmgv0ys14ov0byvtof0t83n5r0klifpb07ik0lb0incu0v0b4pypr0v67unz16kca9r0rk394v1o60w731ef1r0f0wkcven1z141z30jrgu7z08chdrz0i3atq704qct8f0bettkv19mnapr0yifnjz0l5j1fj011112345326666006787795591717600611a17b266786600ccdd88ee8fggg80011a166921aghgh0018g7769b7igggj0066g666991dkklm008cgcccee8cnklo0066gl812277hklm001lklm7b9118nlj007hhlm1p9177klh00c88qqcre888slq0066t616p9111inm0018t666927711jj0061a166926176660e88uccu0e88cvcce",
+          bookshelfSide:
+            "0g0gt1gbtptr1e3lon3189da7z0w0dnun0c8u03j0auqein0wm81z30q7e1hb1g6qozj14913pb0dp0pof0bql6nz0f116v30hj36670i36l1b0t83n5r1ef1r0f125tkhr04vd5hb03g1vcv0kc1b0f0hjr9j31as5khr125derj11il33z0x2j5dr0rig0sf0yifnjz0l5j1fj000100022230000204555567445555420894ab67ccc67de2fghiab6789c67ij3089iabkl89d67gh0289iabkle8967ij2089iab67d8967ij033fffff333ffff330222201122230222255555544455ab4205cc89ddcmn4abc23opq89ce7gh9abi30opq89ac7gh9abi01opq89a7cmn9abi10opq89a7emn9abi0333rffrf333fsff3",
+          furnaceFront:
+            "0g0gz0flk8hr0erh81r0e7f7r30ddc7b30d3b75r0cj96v30a105j30gfn8xr0av35z30f1i8730dxe7lr0u30g730p2idj30r0pekf0jrzapr0o8fd330vr6h330l64bgf0rusf0f0j7xaf30nyecxr0bf569r0muaccf0xfchz30nodcsf0raqepr13tzldr0xzei9r0s4tf5r0mk9c7310rojr30zdjj0f0qgne9r0ma8c1r0pmkdtr011234556701589a0bcdefgghdidfjkalmnopqqrstuvwnx35xybb82a6l6jbqbl0gnh16666660mug65cvl66666666qs06advl66666666qud64yc8gqqqqqqbqcm74jnuwxxccoxhnyn7hqqqqqqqqqqqqqq7hnqqqvjj7jvqqqn3hvqn77666677nqnahvv766666666jqv5hn76666666666qgahv7688ll88886qv57dallllll8lllqda",
+          furnaceTop:
+            "0g0gz0flk8hr0erh81r0e7f7r30ddc7b30d3b75r0cj96v30a105j30gfn8xr0av35z30f1i8730dxe7lr0u30g730p2idj30r0pekf0jrzapr0o8fd330vr6h330l64bgf0rusf0f0j7xaf30nyecxr0bf569r0muaccf0xfchz30nodcsf0raqepr13tzldr0xzei9r0s4tf5r0mk9c7310rojr30zdjj0f0qgne9r0ma8c1r0pmkdtr011234556701589a0bcdefgghdidfjkalmnopqqrstuvwnx35xybqsuuwbccbqbl0gnbqrrcbuqqgug65cvbrvnfqqrurs06advbgcsnguqvuud64ycsqqbibcfrucm74jgqqgbqqugiyhn7lmqqvcqgqvvbbqx35xnrrkqurrvcbbbl0gurgcrrvrciqbg65cccccbrdfqurr06adgqqqbcbqurvrd60bcdefgghdidfjka011234556701589a",
+          furnaceSide:
+            "0g0gz0flk8hr0erh81r0e7f7r30ddc7b30d3b75r0cj96v30a105j30gfn8xr0av35z30f1i8730dxe7lr0u30g730p2idj30r0pekf0jrzapr0o8fd330vr6h330l64bgf0rusf0f0j7xaf30nyecxr0bf569r0muaccf0xfchz30nodcsf0raqepr13tzldr0xzei9r0s4tf5r0mk9c7310rojr30zdjj0f0qgne9r0ma8c1r0pmkdtr011234556701589a0bcdefgghdidfjkalmnopqqrstuvwnx35xybqsuuwbccbqbl0gnbqrrcbuqqgug65cvbrvnfqqrurs06advbgcsnguqvuud64ycsqqbibcfrucm74jnqqnnqqunbbyn7hqqqqqqqqqqqqqq7hnqqqqqqqqqqqqn3hvqqqqqqqqqqqqnahvqqqqqqqqqqqqv5hnqqqqqqqqqqqqgahvnnnnvvnnnnvvv57aa33333353333aa",
+          pumpkinTop:
+            "0g0g718hpipr1luhu671r5xf5r1r529kv0gz11j31r62mm71ex5xbz0011011001110100020231013033310012203302303320111333030330310131013311031330321000003044330310001333045640310311011334656400332110000046503100001233330400303111031000203021032100133030311301301113303023033031132301102310330103310310133013300001010011001100",
+          pumpkinSide:
+            "0g0g418hpipr1luhu671r5xf5r1r529kv0010011001001100023013310330133001300333023033300131031202302310013102130310231002310233031023100233023303101300033303330330130003330131033103100133013103330310013301300333031000330230131302300033023013330230003103301331023001310330023003300011001001001100",
+          jackOLanternSide:
+            "0g0gy18hpipr1luhu671qvdurj1v3hben1r5xf5r1r529kv1vyxibj1xd5erj1whutj31suecxr0l3569r1xd5wxr1d0drsv1dujkzj1eoqsxr1fiwmbj1f8vm671gd3u2n1h79ngf1gn68sf1hrfv9b1iln37j1j5qhvj1ka04jj1ncmdj31p10tfj1jptwjj1hregov1jfswlb1l45xq71msiyv31o6v01r1ft0fen1loaqyn001023100120110004526781087215500159aa782ba985500182acab9aaa9810019adef99afea910040aghi09aihg930040ajkl09alkjg900550km0220nmkh000587292192292930039a9a99a99a9a6006aaaaoaapaaqa9000arstuvpvutsrw9002al2xu2uxn0if9000a25n2058m040001510550045005500011001001001100",
+          quartzBlock:
+            "0g0gz1uum51b1u0j4lb1tqfawv1swca2n1smb9xb1ukl4ov1uaipz31u0j4e71v4n56n1qo2txb1uukq9r1v4lqm71tqi41r1r84u0v1qo48hr1qo2tj31u0hpmn1t6eozj1ukl4vz1qy3tvj1tqgphb1qo2tq71t6ep6n1ukjq4f1veo5bz1uum4u71uaiprz1tgfpbz1swdp1b1r868sf1uak4jj1qy58fz1tgfp4v1tqfapr1t6daf38880ioo8puqq6abb855500552333cc7d85a000522331116di70000522111166eic000722211001repc0044411100001vbc0234411000000db02233441100005db00072442111101j010002442211111eag00022222210ake6k71072667g00khl6mrw1n000000x33fnmhh10000a50y349nshsg100gm333sm9ejll9ttd9ffff99j",
+          seaLantern:
+            "0g0gz1q4lypr1rio6in1rsp6nz1ncj08v1n2jenz1qemzun1pumd4v1q4lybj1ripl331ncketb0n6e0hr0n6ff9b0mcb01r0oaf7jz1nmleyn1nmilfj1pkle671punt331qen01r1pumebj1pklczj1q4ncvz1e6cmwv1rsns3j0ls8zy71nwmein1q4lzpb1r8n6rj1qym6tb1punsvz1r8n6db0ko6dq71n2hzwf0n6b75r0ko6dxbaccdcbacdbcdccddacdmmmmwmmmmmdxocdmwwwe3e4fwwmdcomww3gh5isjewwmvdmw3h676klkg3wmodm4j00n8unl054mocmpq781rs22lq9mydw4t62r0qsuli3wbdwp50ur0ur80i9mbxmftk1u5s8nkhemadmwgk012u1705wmvdmweg066076qgfmycmmwegi5qijhwwmyodmmw44w9w4fmmdyoxdmmmmwwmmmmdaxavvvoyyyyovabvbc",
+          prismarine:
+            "0g0gz15k6vpb0korif30k4pibj0igb18f15k6vb313m42kf1280f0f0k4ifpb0k4pi4f0tbsa2n0jkkoov1begpa70srq8lb15k6vi70l8z5rz0lj05xb0k4phq70koopof0shp8n30m33jzz0lj03y71828t8f0jkkmbj0srq96n0o1kgzj0s7r30f0lt3zlr1csensv18c8fsv0yvpon30oavzlr15u6ein16e8f0f0kypnun0mn5l33ijklmno25pq678rstuvwxy0es96ok6mtmviyseooy65ojuttm7xs5jvw99o74xum54i9y7vtuo4689jos91f50kuur6ce66p15y69i1juymmgy619yoa33y506kv64pb03849y000dk461b0o3ac9199iy1n3a65bbp93uuk104do0qe65pyk6lty99yo56ef3b5xcv6s0om05923499gkmtt69j0pph335g55njk19fyhhd9agmc1y22p300ad9",
+          ice: "0g0g30x7ah0f13lw1b31z141wf0000000000000000000000010000000000020010000000000020000000000010020000000200010000000000200010000000000100000000001000100000000001000000000000000000000020000000000000020000020000000010000020000100000000020000100000000010000000000000000000000000000000000000",
+          snow: "0g0g41z141z31ubaygv1r8yi2n1xx5ofz0001001000112200000111122011200210122112011200110222002001120012001110201120011211112000212211120222012022201122001111120022011201112222333200121110000111120222000211111120011202211122222011221012221000122222111211120112001101022220000001120001122222102120",
+          clay: "0g0gz176lkhr17qm67z18kp6nz18ao6in180n6db19oqepr18kql8f18uq6tb176k5xb18apl3316wj5rz19yrev317qm60v18uot1b180lrsv17qkrnj19op05b18unegv194slq719yq03j16mi5mn194r6yn1aitf5r15sf56n18kqlfj14yc4qn194oef31asuf3z180lrlr15sgjr316cik8v158d4vz18uq6m715ie51b16cecxrp629c304i6e1a0u4o4dbp0a0p5r2041bqrr1s1992i5bta0rufe6a78a0c4i343picbcbbgbjk05ev7tkwar0boh1r2xa83vphy9ple011br256e315498ir6y107d057hmjh0bhrrp2f309vpg44hj0322r3dxb7hpgnm13rric31c3kgiy612s624r008pr60r78lpn2e8dgafr5up800rdr57i15fqe1ahf2lp7p15yadfi1vrwtm3r80191n",
+          terracotta:
+            "0g0gz14vton315pwp3315fvoxr15fu9z3155uosf15pva4f15zz3sv15fx3wf15pzim716a03y715psglb15zwa9r14vs9of16u0pa716k143j17o3pq716u4xdr1600irj17e2pkv15g1blr16u248v14bq9dr14lr9j317e44jj15fx33z15q2br315pv9q717y4pvj155t9tr155xhxb16k3x8f14lsohr14brocf141qo73155qgan20004hnk4fg3llm325nrnht3o6guv5507vt3cwc3d8p87ubq9g6awx0d122j11qa6fid9xmy00rrb263f6e7sbb11169962fduh7302da026gk9sk530dd0ui12116eekkpx4c442higinr1e14cc0401o44pprnqb7cvrry89rnbb50v5b40b87ire99gk10425oa04ri3vsb168ppgjgqc3ax0abgf1j7yl2a027995sad788jjefhjh6aym58",
+          sponge:
+            "0g0gz1jfm1331jzmmm71jpn18f1ivin7j1jplnnj1k9nlz31lnslxb1mhvp4v1k9gm4f1k9ktfj1fj6kn31jzh1bz1lxpeyn1ktpmnz1ldt1bz11lsj5r1o61mv31m7uk8v1n1xmnz1ktpm9r1m7un0f180ic5b1o630u71n1xlvj1ivimtb1ep3kzj1ktr1tr1pa711b1pk83y71e51m9r1gd9lvj1j5l0xr1m7uo731jpogsf1ilhn27xyadlh1173fk78h4yfryosfph6986qf4qh4khjaanbugfyscdyefpegfn5ufpu0qyh4al6au2uvhijrbdu51kuhxf541fwwlwfjsf32bmjoasr08uls6gwuh544kl6k5vnh6e2vfrpfoa87x50jfh3734favrflp0q5r3hfisqsrvsp5f62svynkdo8fk4m0ls5ft01sftq0cafmmh8uurvfuwp264v32ylprpg9wug5fr5osvavlq09srnki32l",
+        };
+        var blockData = [
+          {
+            name: "air",
+            id: 0,
+            textures: [],
+            transparent: true,
+            shadow: false,
+          },
+          {
+            name: "grass",
+            textures: ["dirt", "grassTop", "grassSide"],
+          },
+          {
+            name: "dirt",
+          },
+          {
+            name: "stone",
+          },
+          {
+            name: "bedrock",
+          },
+          {
+            name: "sand",
+          },
+          {
+            name: "gravel",
+          },
+          {
+            name: "leaves",
+            transparent: true,
+          },
+          {
+            name: "glass",
+            transparent: true,
+            shadow: false,
+          },
+          {
+            name: "cobblestone",
+          },
+          {
+            name: "mossyCobble",
+          },
+          {
+            name: "stoneBricks",
+          },
+          {
+            name: "mossyStoneBricks",
+          },
+          {
+            name: "bricks",
+          },
+          {
+            name: "coalOre",
+          },
+          {
+            name: "ironOre",
+          },
+          {
+            name: "goldOre",
+          },
+          {
+            name: "diamondOre",
+          },
+          {
+            name: "redstoneOre",
+          },
+          {
+            name: "lapisOre",
+          },
+          {
+            name: "emeraldOre",
+          },
+          {
+            name: "coalBlock",
+          },
+          {
+            name: "ironBlock",
+          },
+          {
+            name: "goldBlock",
+          },
+          {
+            name: "diamondBlock",
+          },
+          {
+            name: "redstoneBlock",
+          },
+          {
+            name: "lapisBlock",
+          },
+          {
+            name: "emeraldBlock",
+          },
+          // { // I swear, if y'all don't stop asking about TNT every 5 minutes!
+          //     name: "tnt",
+          //     textures: ["tntBottom", "tntTop", "tntSides"]
+          // },
+          {
+            name: "oakPlanks",
+          },
+          {
+            name: "oakLog",
+            textures: ["logTop", "logSide"],
+          },
+          {
+            name: "acaciaPlanks",
+          },
+          {
+            name: "acaciaLog",
+            textures: ["acaciaLogTop", "acaciaLogSide"],
+          },
+          {
+            name: "birchPlanks",
+          },
+          {
+            name: "birchLog",
+            textures: ["birchLogTop", "birchLogSide"],
+          },
+          {
+            name: "darkOakPlanks",
+          },
+          {
+            name: "darkOakLog",
+            textures: ["darkOakLogTop", "darkOakLogSide"],
+          },
+          {
+            name: "junglePlanks",
+          },
+          {
+            name: "jungleLog",
+            textures: ["jungleLogTop", "jungleLogSide"],
+          },
+          {
+            name: "sprucePlanks",
+          },
+          {
+            name: "spruceLog",
+            textures: ["spruceLogTop", "spruceLogSide"],
+          },
+          {
+            name: "whiteWool",
+          },
+          {
+            name: "orangeWool",
+          },
+          {
+            name: "magentaWool",
+          },
+          {
+            name: "lightBlueWool",
+          },
+          {
+            name: "yellowWool",
+          },
+          {
+            name: "limeWool",
+          },
+          {
+            name: "pinkWool",
+          },
+          {
+            name: "grayWool",
+          },
+          {
+            name: "lightGrayWool",
+          },
+          {
+            name: "cyanWool",
+          },
+          {
+            name: "purpleWool",
+          },
+          {
+            name: "blueWool",
+          },
+          {
+            name: "brownWool",
+          },
+          {
+            name: "greenWool",
+          },
+          {
+            name: "redWool",
+          },
+          {
+            name: "blackWool",
+          },
+          {
+            name: "whiteConcrete",
+          },
+          {
+            name: "orangeConcrete",
+          },
+          {
+            name: "magentaConcrete",
+          },
+          {
+            name: "lightBlueConcrete",
+          },
+          {
+            name: "yellowConcrete",
+          },
+          {
+            name: "limeConcrete",
+          },
+          {
+            name: "pinkConcrete",
+          },
+          {
+            name: "grayConcrete",
+          },
+          {
+            name: "lightGrayConcrete",
+          },
+          {
+            name: "cyanConcrete",
+          },
+          {
+            name: "purpleConcrete",
+          },
+          {
+            name: "blueConcrete",
+          },
+          {
+            name: "brownConcrete",
+          },
+          {
+            name: "greenConcrete",
+          },
+          {
+            name: "redConcrete",
+          },
+          {
+            name: "blackConcrete",
+          },
+          {
+            name: "tnt",
+            textures: ["tntTop", "tntBottom", "tntSides"],
+          },
+          {
+            name: "obsidian",
+          },
+          {
+            name: "glowstone",
+          },
+          {
+            name: "netherrack",
+          },
+          {
+            name: "craftingTable",
+            textures: [
+              "oakPlanks",
+              "craftingTableTop",
+              "craftingTableSide",
+              "craftingTableSide",
+              "craftingTableSide",
+              "craftingTableSide",
+            ],
+          },
+          {
+            name: "bookshelf",
+            textures: ["oakPlanks", "bookshelfSide"],
+          },
+          {
+            name: "furnace",
+            textures: [
+              "furnaceTop",
+              "furnaceTop",
+              "furnaceFront",
+              "furnaceSide",
+              "furnaceSide",
+              "furnaceSide",
+            ],
+          },
+          {
+            name: "pumpkin",
+            textures: ["pumpkinTop", "pumpkinSide"],
+          },
+          {
+            name: "jackOLantern",
+            textures: [
+              "pumpkinTop",
+              "pumpkinTop",
+              "jackOLanternSide",
+              "pumpkinSide",
+              "pumpkinSide",
+              "pumpkinSide",
+            ],
+          },
+          {
+            name: "quartzBlock",
+          },
+          {
+            name: "seaLantern",
+          },
+          {
+            name: "prismarine",
+          },
+          {
+            name: "ice",
+            transparent: true,
+          },
+          {
+            name: "snow",
+          },
+          {
+            name: "clay",
+          },
+          {
+            name: "terracotta",
+          },
+          {
+            name: "sponge",
+          },
+          {
+            name: "oakStairs",
+            textures: "oakPlanks",
+            transparent: true,
+          },
+          {
+            name: "oakSlab",
+            textures: "oakPlanks",
+            transparent: true,
+          },
+          {
+            name: "oakDoor",
+            textures: "oakPlanks",
+            transparent: true,
+          },
+          {
+            name: "spruceStairs",
+            textures: "sprucePlanks",
+            transparent: true,
+          },
+          {
+            name: "spruceSlab",
+            textures: "sprucePlanks",
+            transparent: true,
+          },
+          {
+            name: "spruceDoor",
+            textures: "sprucePlanks",
+            transparent: true,
+          },
+          {
+            name: "birchStairs",
+            textures: "birchPlanks",
+            transparent: true,
+          },
+          {
+            name: "birchSlab",
+            textures: "birchPlanks",
+            transparent: true,
+          },
+          {
+            name: "birchDoor",
+            textures: "birchPlanks",
+            transparent: true,
+          },
+          {
+            name: "jungleStairs",
+            textures: "junglePlanks",
+            transparent: true,
+          },
+          {
+            name: "jungleSlab",
+            textures: "junglePlanks",
+            transparent: true,
+          },
+          {
+            name: "jungleDoor",
+            textures: "junglePlanks",
+            transparent: true,
+          },
+          {
+            name: "acaciaStairs",
+            textures: "acaciaPlanks",
+            transparent: true,
+          },
+          {
+            name: "acaciaSlab",
+            textures: "acaciaPlanks",
+            transparent: true,
+          },
+          {
+            name: "acaciaDoor",
+            textures: "acaciaPlanks",
+            transparent: true,
+          },
+          {
+            name: "darkOakStairs",
+            textures: "darkOakPlanks",
+            transparent: true,
+          },
+          {
+            name: "darkOakSlab",
+            textures: "darkOakPlanks",
+            transparent: true,
+          },
+          {
+            name: "darkOakDoor",
+            textures: "darkOakPlanks",
+            transparent: true,
+          },
+          {
+            name: "spawnEggPig",
+            textures: [
+              "eggPig",
+              "eggPig",
+              "eggPig",
+              "eggPig",
+              "eggPig",
+              "eggPig",
+            ],
+          },
+          {
+            name: "spawnEggCow",
+            textures: [
+              "eggCow",
+              "eggCow",
+              "eggCow",
+              "eggCow",
+              "eggCow",
+              "eggCow",
+            ],
+          },
+          {
+            name: "spawnEggSheep",
+            textures: [
+              "eggSheep",
+              "eggSheep",
+              "eggSheep",
+              "eggSheep",
+              "eggSheep",
+              "eggSheep",
+            ],
+          },
+          {
+            name: "spawnEggChicken",
+            textures: [
+              "eggChicken",
+              "eggChicken",
+              "eggChicken",
+              "eggChicken",
+              "eggChicken",
+              "eggChicken",
+            ],
+          },
+          {
+            name: "spawnEggCat",
+            textures: [
+              "eggCat",
+              "eggCat",
+              "eggCat",
+              "eggCat",
+              "eggCat",
+              "eggCat",
+            ],
+          },
+          {
+            name: "spawnEggAxolotl",
+            textures: [
+              "eggAxolotl",
+              "eggAxolotl",
+              "eggAxolotl",
+              "eggAxolotl",
+              "eggAxolotl",
+              "eggAxolotl",
+            ],
+          },
+          {
+            name: "spawnEggVillager",
+            textures: [
+              "eggVillager",
+              "eggVillager",
+              "eggVillager",
+              "eggVillager",
+              "eggVillager",
+              "eggVillager",
+            ],
+          },
+        ];
+        (function () {
+          for (var i = 1; i < blockData.length; i++) {
+            var data = blockData[i];
+            data.id = i;
+            if (!data.textures) {
+              data.textures = [
+                data.name,
+                data.name,
+                data.name,
+                data.name,
+                data.name,
+                data.name,
+              ];
+            } else if (typeof data.textures === "string") {
+              var texture = data.textures;
+              data.textures = [
+                texture,
+                texture,
+                texture,
+                texture,
+                texture,
+                texture,
+              ];
+            } else if (data.textures.length === 3) {
+              data.textures[3] = data.textures[2];
+              data.textures[4] = data.textures[2];
+              data.textures[5] = data.textures[2];
+            } else if (data.textures.length === 2) {
+              // Top and bottom are the first texture, sides are the second.
+              data.textures[2] = data.textures[1];
+              data.textures[3] = data.textures[2];
+              data.textures[4] = data.textures[2];
+              data.textures[5] = data.textures[2];
+              data.textures[1] = data.textures[0];
+            }
+            data.transparent = data.transparent || false;
+            data.shadow = data.shadow !== undefined ? data.shadow : true;
+          }
+        })();
+        var blockMetadata = {};
+        var customIds = {};
+        var customSideNames = [
+          "top",
+          "bottom",
+          "north",
+          "south",
+          "east",
+          "west",
+        ];
+        var customSideNormals = [
+          [0, -1, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+          [0, 0, -1],
+          [1, 0, 0],
+          [-1, 0, 0],
+        ];
+        function getCustomBoxes(id, x2, y2, z2) {
+          var info = customIds[id];
+          if (!info) return null;
+          var meta = blockMetadata[x2 + "," + y2 + "," + z2] || 0;
+          if (info.type === "slab") {
+            if (meta === 1)
+              return [{ box: [-0.5, -0.5, -0.5, 0.5, 0, 0.5], skip: [] }];
+            if (meta === 2)
+              return [{ box: [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], skip: [] }];
+            return [{ box: [-0.5, 0, -0.5, 0.5, 0.5, 0.5], skip: [] }];
+          }
+          if (info.type === "log")
+            return [{ box: [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], skip: [] }];
+          if (info.type === "stairs") {
+            var d = meta & 3,
+              lo = meta & 4 ? 0 : -0.5,
+              hi = meta & 4 ? 0.5 : 0,
+              e,
+              t;
+            if (d === 0) {
+              e = [-0.5, lo, -0.5, 0.5, hi, 0];
+              t = [-0.5, -0.5, 0, 0.5, 0.5, 0.5];
+            } else if (d === 1) {
+              e = [-0.5, lo, -0.5, 0, hi, 0.5];
+              t = [0, -0.5, -0.5, 0.5, 0.5, 0.5];
+            } else if (d === 2) {
+              e = [-0.5, lo, 0, 0.5, hi, 0.5];
+              t = [-0.5, -0.5, -0.5, 0.5, 0.5, 0];
+            } else {
+              e = [0, lo, -0.5, 0.5, hi, 0.5];
+              t = [-0.5, -0.5, -0.5, 0, 0.5, 0.5];
+            }
+            return [
+              { box: e, skip: [[2, 4, 3, 5][d]] },
+              { box: t, skip: [] },
+            ];
+          }
+          if (info.type === "door") {
+            var facing = meta & 3;
+            var open = (meta >> 2) & 1;
+            var T = 0.1875;
+            var b;
+            if (!open) {
+              if (facing === 0) b = [-0.5, -0.5, -0.5, 0.5, 0.5, -0.5 + T];
+              else if (facing === 1) b = [-0.5, -0.5, -0.5, -0.5 + T, 0.5, 0.5];
+              else if (facing === 2) b = [-0.5, -0.5, 0.5 - T, 0.5, 0.5, 0.5];
+              else b = [0.5 - T, -0.5, -0.5, 0.5, 0.5, 0.5];
+            } else {
+              if (facing === 0 || facing === 2)
+                b = [-0.5, -0.5, -0.5, -0.5 + T, 0.5, 0.5];
+              else b = [-0.5, -0.5, -0.5, 0.5, 0.5, -0.5 + T];
+            }
+            return [{ box: b, skip: [] }];
+          }
+          return null;
+        }
+        function getCustomTexKeys(id, x2, y2, z2, tex) {
+          var info = customIds[id];
+          var meta = blockMetadata[x2 + "," + y2 + "," + z2] || 0;
+          var keys = tex;
+          if (info.type === "log") {
+            keys = tex.slice();
+            var axis = meta & 3;
+            var topKey = tex[0];
+            var sideKey = tex[2];
+            if (axis === 0) {
+              keys[0] = topKey;
+              keys[1] = topKey;
+              keys[2] = sideKey;
+              keys[3] = sideKey;
+              keys[4] = sideKey;
+              keys[5] = sideKey;
+            } else if (axis === 1) {
+              keys[4] = topKey;
+              keys[5] = topKey;
+            } else {
+              keys[2] = topKey;
+              keys[3] = topKey;
+            }
+          } else if (info.type === "door") {
+            keys = tex.slice();
+            var doorTex = meta & 8 ? info.doorTexUpper : info.doorTexLower;
+            var dfacing = meta & 3;
+            var dopen = (meta >> 2) & 1;
+            if ((dfacing === 0 || dfacing === 2) !== !!dopen) {
+              keys[2] = doorTex;
+              keys[3] = doorTex;
+            } else {
+              keys[4] = doorTex;
+              keys[5] = doorTex;
+            }
+          }
+          return keys;
+        }
+        function emitCustomBox(
+          barray,
+          index,
+          id,
+          x,
+          y,
+          z,
+          x2,
+          y2,
+          z2,
+          blocks,
+          gShadows,
+          tCoords,
+          tmap,
+          sedgeVerts,
+          box,
+          texKeys,
+          skip
+        ) {
+          for (var s = 0; s < 6; s++) {
+            if (skip && skip.indexOf(s) !== -1) continue;
+            var verts = sedgeVerts[s];
+            var flush = false;
+            if (s === 0) flush = box[1] <= -0.499;
+            else if (s === 1) flush = box[4] >= 0.499;
+            else if (s === 2) flush = box[5] >= 0.499;
+            else if (s === 3) flush = box[2] <= -0.499;
+            else if (s === 4) flush = box[3] >= 0.499;
+            else flush = box[0] <= -0.499;
+            if (flush) {
+              var nb = world.getBlock(
+                x2 + customSideNormals[s][0],
+                y2 + customSideNormals[s][1],
+                z2 + customSideNormals[s][2]
+              );
+              if (
+                nb &&
+                (nb === id ||
+                  (!customIds[nb] &&
+                    blockData[nb] &&
+                    !blockData[nb].transparent))
+              ) {
+                continue;
+              }
+            }
+            var q = [];
+            for (var c = 0; c < 4; c++) {
+              var vx = verts[c * 3];
+              var vy = verts[c * 3 + 1];
+              var vz = verts[c * 3 + 2];
+              if (vx < box[0]) vx = box[0];
+              else if (vx > box[3]) vx = box[3];
+              if (vy < box[1]) vy = box[1];
+              else if (vy > box[4]) vy = box[4];
+              if (vz < box[2]) vz = box[2];
+              else if (vz > box[5]) vz = box[5];
+              q.push(vx, vy, vz);
+            }
+            if (
+              q[0] === q[3] &&
+              q[1] === q[4] &&
+              q[2] === q[5] &&
+              q[6] === q[9] &&
+              q[7] === q[10] &&
+              q[8] === q[11]
+            ) {
+              continue;
+            }
+            var shadows = gShadows[customSideNames[s]](x, y, z, blocks);
+            var texVerts = tCoords[tmap[texKeys[s]]];
+            var tu0 = texVerts[2];
+            var tv0 = texVerts[1];
+            for (var c2 = 0; c2 < 4; c2++) {
+              var cvx = q[c2 * 3];
+              var cvy = q[c2 * 3 + 1];
+              var cvz = q[c2 * 3 + 2];
+              var uOff, vOff;
+              if (s === 0) {
+                uOff = 0.5 - cvx;
+                vOff = cvz + 0.5;
+              } else if (s === 1) {
+                uOff = 0.5 - cvz;
+                vOff = cvx + 0.5;
+              } else if (s === 2) {
+                uOff = cvx + 0.5;
+                vOff = 0.5 - cvy;
+              } else if (s === 3) {
+                uOff = 0.5 - cvx;
+                vOff = 0.5 - cvy;
+              } else if (s === 4) {
+                uOff = 0.5 - cvz;
+                vOff = 0.5 - cvy;
+              } else {
+                uOff = cvz + 0.5;
+                vOff = 0.5 - cvy;
+              }
+              barray[index] = cvx + x2;
+              barray[index + 1] = cvy + y2;
+              barray[index + 2] = cvz + z2;
+              barray[index + 3] = tu0 + uOff * 0.0625;
+              barray[index + 4] = tv0 + vOff * 0.0625;
+              barray[index + 5] = shadows[c2];
+              index += 6;
+            }
+          }
+          return index;
+        }
+        function genCustomBlockMesh(
+          barray,
+          index,
+          id,
+          x,
+          y,
+          z,
+          x2,
+          y2,
+          z2,
+          blocks,
+          gShadows,
+          tCoords,
+          tmap,
+          sedgeVerts
+        ) {
+          var boxes = getCustomBoxes(id, x2, y2, z2);
+          if (!boxes) return index;
+          var texKeys = getCustomTexKeys(
+            id,
+            x2,
+            y2,
+            z2,
+            blockData[id].textures
+          );
+          for (var b = 0; b < boxes.length; b++) {
+            index = emitCustomBox(
+              barray,
+              index,
+              id,
+              x,
+              y,
+              z,
+              x2,
+              y2,
+              z2,
+              blocks,
+              gShadows,
+              tCoords,
+              tmap,
+              sedgeVerts,
+              boxes[b].box,
+              texKeys,
+              boxes[b].skip
+            );
+          }
+          return index;
+        }
+        function getBlockCollisionBoxes(bx, by, bz) {
+          var id = world ? world.getBlock(bx, by, bz) : 0;
+          if (!id || !customIds[id]) {
+            return [[bx, by, bz, 1, 1, 1]];
+          }
+          var boxes = getCustomBoxes(id, bx, by, bz);
+          if (!boxes) return [[bx, by, bz, 1, 1, 1]];
+          var out = [];
+          for (var i = 0; i < boxes.length; i++) {
+            var b = boxes[i].box;
+            out.push([
+              bx + (b[0] + b[3]) / 2,
+              by + (b[1] + b[4]) / 2,
+              bz + (b[2] + b[5]) / 2,
+              b[3] - b[0],
+              b[4] - b[1],
+              b[5] - b[2],
+            ]);
+          }
+          return out;
+        }
+        function computePlacementMeta(blockVal, pos, face) {
+          var info = customIds[blockVal];
+          var dx = -Math.sin(p.ry);
+          var dz = Math.cos(p.ry);
+          var look =
+            Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 1 : 3) : dz > 0 ? 0 : 2;
+          if (info.type === "slab")
+            return face === "top"
+              ? 0
+              : face === "bottom"
+              ? 1
+              : p.y < pos[1]
+              ? 1
+              : 0;
+          if (info.type === "log")
+            return face === "top" || face === "bottom"
+              ? 0
+              : face === "north" || face === "south"
+              ? 2
+              : 1;
+          if (info.type === "stairs") {
+            // 上向きに設置（地面の上）= 通常の階段、下向き（天井）= 逆さまの階段
+            // 全ての面でプレイヤーの向きを反映し、上下・左右・反対も全方向対応
+            if (face === "top") return look;
+            if (face === "bottom") return 4 | look;
+            // 側面に設置するときもプレイヤーの向きを使う（反対方向も可能）
+            return look;
+          }
+          return look;
+        }
+        function placeDoorUpper(x, y, z, id, meta) {
+          if (world.getBlock(x, y + 1, z) !== 0) return false;
+          world.setBlock(x, y + 1, z, id);
+          var okey = x + "," + (y + 1) + "," + z;
+          blockChanges[okey] = id;
+          blockMetadata[okey] = meta | 8;
+          updateChunkBlockMapSingle(x, y + 1, z, id);
+          return true;
+        }
+        function removeDoorPair(x, y, z, id) {
+          var meta = blockMetadata[x + "," + y + "," + z] || 0;
+          var oy = meta & 8 ? y - 1 : y + 1;
+          if (world.getBlock(x, oy, z) === id) {
+            world.setBlock(x, oy, z, 0);
+            var okey = x + "," + oy + "," + z;
+            blockChanges[okey] = 0;
+            delete blockMetadata[okey];
+            updateChunkBlockMapSingle(x, oy, z, 0);
+            return oy;
+          }
+          return null;
+        }
+        var toggleDoor = function () {
+          if (!hitBox.pos) return;
+          var x = hitBox.pos[0];
+          var y = hitBox.pos[1];
+          var z = hitBox.pos[2];
+          var id = world.getBlock(x, y, z);
+          if (!customIds[id] || customIds[id].type !== "door") return;
+          var key = x + "," + y + "," + z;
+          var meta = blockMetadata[key] || 0;
+          var wasOpen = !!(meta & 4);
+          var facing = meta & 3;
+          var oy = meta & 8 ? y - 1 : y + 1;
+          var otherId = world.getBlock(x, oy, z);
+          var otherIsDoor = !!(
+            customIds[otherId] && customIds[otherId].type === "door"
+          );
+          if (otherIsDoor) {
+            var okey = x + "," + oy + "," + z;
+            var om = blockMetadata[okey] || 0;
+            blockMetadata[okey] = om ^ 4;
+            world.setBlock(x, oy, z, otherId);
+          }
+          blockMetadata[key] = meta ^ 4;
+          world.setBlock(x, y, z, id);
+
+          // 開いているドアを閉じた瞬間にプレイヤーが扉の当たり判定へ
+          // 重なっていると、従来のY方向解決で上へ押し出されることがある。
+          // 閉じる操作では、扉の面に対して左右へ逃がす。
+          if (wasOpen && p && !p.flying) {
+            var px = Number(p.x) || 0;
+            var pz = Number(p.z) || 0;
+            if (facing === 0 || facing === 2) {
+              var sx = px - x;
+              var pushX =
+                Math.abs(sx) > 0.08
+                  ? sx > 0
+                    ? 0.24
+                    : -0.24
+                  : facing === 0
+                  ? 0.24
+                  : -0.24;
+              p.x += pushX;
+              p.velocity.x = 0;
+            } else {
+              var sz = pz - z;
+              var pushZ =
+                Math.abs(sz) > 0.08
+                  ? sz > 0
+                    ? 0.24
+                    : -0.24
+                  : facing === 1
+                  ? 0.24
+                  : -0.24;
+              p.z += pushZ;
+              p.velocity.z = 0;
+            }
+          }
+          // ドアの開閉状態を他プレイヤーへ同期する（上下両方）
+          if (
+            isMultiplayer &&
+            window.__mcMPBridge &&
+            typeof window.__mcMPBridge.localBlockChanged === "function"
+          ) {
+            window.__mcMPBridge.localBlockChanged(
+              x,
+              y,
+              z,
+              id,
+              undefined,
+              blockMetadata[key]
+            );
+            if (otherIsDoor) {
+              window.__mcMPBridge.localBlockChanged(
+                x,
+                oy,
+                z,
+                otherId,
+                undefined,
+                blockMetadata[x + "," + oy + "," + z]
+              );
+            }
+          }
+        };
+        var win = window;
+        var doc = document;
+        var console = window.console;
+        var world;
+        var blockChanges = {};
+        var furnaceOrientations = {};
+        var savedWorldData = null;
+        var pendingBlockChanges = false;
+        var isMultiplayer = false;
+        var multiplayerQuery = new URLSearchParams(window.location.search);
+        var multiplayerRoomId = multiplayerQuery.get("room") || "";
+        isMultiplayer =
+          multiplayerQuery.get("mode") === "multi" && !!multiplayerRoomId;
+
+        // --- High Performance Storage Engine (IndexedDB + Spatial Chunk Cache) ---
+        // Stores unlimited block changes without hitting localStorage 5MB quota or freezing
+        var idbName = "MinecraftWorldDB";
+        var idbStoreName = "world_saves";
+        var chunkBlockMap = {}; // Key: "cx,cz" -> Array of { lx, y, lz, id }
+
+        function openWorldDB() {
+          return new Promise(function (resolve) {
+            if (!window.indexedDB) {
+              resolve(null);
+              return;
+            }
+            try {
+              var req = window.indexedDB.open(idbName, 1);
+              req.onupgradeneeded = function (e) {
+                var db = e.target.result;
+                if (!db.objectStoreNames.contains(idbStoreName)) {
+                  db.createObjectStore(idbStoreName, { keyPath: "id" });
+                }
+              };
+              req.onsuccess = function (e) {
+                resolve(e.target.result);
+              };
+              req.onerror = function () {
+                resolve(null);
+              };
+            } catch (e) {
+              resolve(null);
+            }
+          });
+        }
+
+        function saveWorldToIDB(worldId, saveObj) {
+          return new Promise(function (resolve) {
+            openWorldDB()
+              .then(function (db) {
+                if (!db) {
+                  resolve(false);
+                  return;
+                }
+                try {
+                  var tx = db.transaction([idbStoreName], "readwrite");
+                  var store = tx.objectStore(idbStoreName);
+                  var record = Object.assign({ id: worldId }, saveObj);
+                  store.put(record);
+                  tx.oncomplete = function () {
+                    resolve(true);
+                  };
+                  tx.onerror = function () {
+                    resolve(false);
+                  };
+                } catch (e) {
+                  resolve(false);
+                }
+              })
+              .catch(function () {
+                resolve(false);
+              });
+          });
+        }
+
+        function loadWorldFromIDB(worldId) {
+          return new Promise(function (resolve) {
+            openWorldDB()
+              .then(function (db) {
+                if (!db) {
+                  resolve(null);
+                  return;
+                }
+                try {
+                  var tx = db.transaction([idbStoreName], "readonly");
+                  var store = tx.objectStore(idbStoreName);
+                  var req = store.get(worldId);
+                  req.onsuccess = function (e) {
+                    resolve(e.target.result || null);
+                  };
+                  req.onerror = function () {
+                    resolve(null);
+                  };
+                } catch (e) {
+                  resolve(null);
+                }
+              })
+              .catch(function () {
+                resolve(null);
+              });
+          });
+        }
+
+        function rebuildChunkBlockMap() {
+          chunkBlockMap = {};
+          if (!blockChanges) return;
+          for (var key in blockChanges) {
+            var c1 = key.indexOf(",");
+            var c2 = key.lastIndexOf(",");
+            if (c1 === -1 || c2 === -1) continue;
+            var bx = parseInt(key.substring(0, c1), 10);
+            var by = parseInt(key.substring(c1 + 1, c2), 10);
+            var bz = parseInt(key.substring(c2 + 1), 10);
+            var bVal = blockChanges[key];
+            var cx = bx >> 4;
+            var cz = bz >> 4;
+            var chunkKey = cx + "," + cz;
+            if (!chunkBlockMap[chunkKey]) chunkBlockMap[chunkKey] = [];
+            chunkBlockMap[chunkKey].push({
+              lx: bx & 15,
+              y: by,
+              lz: bz & 15,
+              id: bVal,
+            });
+          }
+        }
+
+        function updateChunkBlockMapSingle(bx, by, bz, bVal) {
+          var cx = bx >> 4;
+          var cz = bz >> 4;
+          var chunkKey = cx + "," + cz;
+          if (!chunkBlockMap[chunkKey]) chunkBlockMap[chunkKey] = [];
+          var lx = bx & 15;
+          var lz = bz & 15;
+          var list = chunkBlockMap[chunkKey];
+          var found = false;
+          for (var i = 0; i < list.length; i++) {
+            if (list[i].lx === lx && list[i].y === by && list[i].lz === lz) {
+              list[i].id = bVal;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            list.push({ lx: lx, y: by, lz: lz, id: bVal });
+          }
+        }
+
+        function getSelectedWorldSaveKey() {
+          // シングルプレイとマルチプレイは完全に別ストレージ領域にする。
+          // マルチは room ID をワールドIDとして使い、mc_selected_world を参照しない。
+          if (isMultiplayer && multiplayerRoomId) {
+            return "mc_mp_save_" + multiplayerRoomId;
+          }
+          var selWorld = null;
+          try {
+            selWorld = JSON.parse(
+              localStorage.getItem("mc_selected_world") || "null"
+            );
+          } catch (e) {}
+          return selWorld && selWorld.id
+            ? "mc_save_" + selWorld.id
+            : "mc_save_default";
+        }
+
+        var newFloat32Array = function (arr) {
+          return new Float32Array(arr);
+        };
+        var newInt32Array = function (arr) {
+          return new Int32Array(arr);
+        };
+        var newUint32Array = function (arr) {
+          return new Uint32Array(arr);
+        };
+        var newUint16Array = function (arr) {
+          return new Uint16Array(arr);
+        };
+        var newUint8Array = function (arr) {
+          return new Uint8Array(arr);
+        };
+        var seedHash;
+        var hash = (function () {
+          var seed = (Math.random() * 2100000000) | 0;
+          var PRIME32_2 = 1883677709;
+          var PRIME32_3 = 2034071983;
+          var PRIME32_4 = 668265263;
+          var PRIME32_5 = 374761393;
+          seedHash = function (s) {
+            seed = s | 0;
+          };
+
+          return function (x, y) {
+            var h32 = 0;
+            h32 = (seed + PRIME32_5) | 0;
+            h32 += 8;
+            h32 += Math.imul(x, PRIME32_3);
+            h32 = Math.imul((h32 << 17) | (h32 >> (32 - 17)), PRIME32_4);
+            h32 += Math.imul(y, PRIME32_3);
+            h32 = Math.imul((h32 << 17) | (h32 >> (32 - 17)), PRIME32_4);
+            h32 ^= h32 >> 15;
+            h32 *= PRIME32_2;
+            h32 ^= h32 >> 13;
+            h32 *= PRIME32_3;
+            h32 ^= h32 >> 16;
+            return h32 / 2147483647;
+          };
+        })();
+        var worldSeed;
+        //The noise and random functions are copied from the processing.js source code; these others are polyfills made by me to avoid needing to remove all the pjs draw calls
+        var currentRandom = null;
+
+        function Marsaglia(i1, i2) {
+          // from http://www.math.uni-bielefeld.de/~sillke/ALGORITHMS/random/marsaglia-c
+          var z = i1 || 362436069,
+            w = i2 || 521288629;
+          var nextInt = function () {
+            z = (36969 * (z & 65535) + (z >>> 16)) & 0xffffffff;
+            w = (18000 * (w & 65535) + (w >>> 16)) & 0xffffffff;
+            return (((z & 0xffff) << 16) | (w & 0xffff)) & 0xffffffff;
+          };
+          this.nextDouble = function () {
+            var i = nextInt() / 4294967296;
+            return i < 0 ? 1 + i : i;
+          };
+          this.nextInt = nextInt;
+        }
+        var randomSeed = function (seed) {
+          currentRandom = new Marsaglia(seed).nextDouble;
+        };
+        var random = function (min, max) {
+          if (!max) {
+            if (min) {
+              max = min;
+              min = 0;
+            } else {
+              min = 0;
+              max = 1;
+            }
+          }
+          return currentRandom() * (max - min) + min;
+        };
+        var noiseProfile = {
+          generator: undefined,
+          octaves: 4,
+          fallout: 0.5,
+          seed: undefined,
+        };
+
+        function PerlinNoise(seed) {
+          var rnd =
+            seed !== undefined
+              ? new Marsaglia(seed)
+              : Marsaglia.createRandomized();
+          var i, j;
+          // http://www.noisemachine.com/talk1/17b.html
+          // http://mrl.nyu.edu/~perlin/noise/
+          // generate permutation
+          var perm = new Uint8Array(512);
+          for (i = 0; i < 256; ++i) {
+            perm[i] = i;
+          }
+          for (i = 0; i < 256; ++i) {
+            var t = perm[(j = rnd.nextInt() & 0xff)];
+            perm[j] = perm[i];
+            perm[i] = t;
+          }
+          // copy to avoid taking mod in perm[0];
+          for (i = 0; i < 256; ++i) {
+            perm[i + 256] = perm[i];
+          }
+
+          function grad3d(i, x, y, z) {
+            var h = i & 15; // convert into 12 gradient directions
+            var u = h < 8 ? x : y,
+              v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+            return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+          }
+
+          function grad2d(i, x, y) {
+            var v = (i & 1) === 0 ? x : y;
+            return (i & 2) === 0 ? -v : v;
+          }
+
+          function grad1d(i, x) {
+            return (i & 1) === 0 ? -x : x;
+          }
+
+          function lerp(t, a, b) {
+            return a + t * (b - a);
+          }
+          this.noise3d = function (x, y, z) {
+            var X = Math.floor(x) & 255,
+              Y = Math.floor(y) & 255,
+              Z = Math.floor(z) & 255;
+            x -= Math.floor(x);
+            y -= Math.floor(y);
+            z -= Math.floor(z);
+            var fx = (3 - 2 * x) * x * x,
+              fy = (3 - 2 * y) * y * y,
+              fz = (3 - 2 * z) * z * z;
+            var p0 = perm[X] + Y,
+              p00 = perm[p0] + Z,
+              p01 = perm[p0 + 1] + Z,
+              p1 = perm[X + 1] + Y,
+              p10 = perm[p1] + Z,
+              p11 = perm[p1 + 1] + Z;
+            return lerp(
+              fz,
+              lerp(
+                fy,
+                lerp(
+                  fx,
+                  grad3d(perm[p00], x, y, z),
+                  grad3d(perm[p10], x - 1, y, z)
+                ),
+                lerp(
+                  fx,
+                  grad3d(perm[p01], x, y - 1, z),
+                  grad3d(perm[p11], x - 1, y - 1, z)
+                )
+              ),
+              lerp(
+                fy,
+                lerp(
+                  fx,
+                  grad3d(perm[p00 + 1], x, y, z - 1),
+                  grad3d(perm[p10 + 1], x - 1, y, z - 1)
+                ),
+                lerp(
+                  fx,
+                  grad3d(perm[p01 + 1], x, y - 1, z - 1),
+                  grad3d(perm[p11 + 1], x - 1, y - 1, z - 1)
+                )
+              )
+            );
+          };
+          this.noise2d = function (x, y) {
+            var X = Math.floor(x) & 255,
+              Y = Math.floor(y) & 255;
+            x -= Math.floor(x);
+            y -= Math.floor(y);
+            var fx = (3 - 2 * x) * x * x,
+              fy = (3 - 2 * y) * y * y;
+            var p0 = perm[X] + Y,
+              p1 = perm[X + 1] + Y;
+            return lerp(
+              fy,
+              lerp(fx, grad2d(perm[p0], x, y), grad2d(perm[p1], x - 1, y)),
+              lerp(
+                fx,
+                grad2d(perm[p0 + 1], x, y - 1),
+                grad2d(perm[p1 + 1], x - 1, y - 1)
+              )
+            );
+          };
+          this.noise1d = function (x) {
+            var X = Math.floor(x) & 255;
+            x -= Math.floor(x);
+            var fx = (3 - 2 * x) * x * x;
+            return lerp(fx, grad1d(perm[X], x), grad1d(perm[X + 1], x - 1));
+          };
+        }
+        var noiseSeed = function (seed) {
+          noiseProfile.seed = seed;
+          noiseProfile.generator = undefined;
+        };
+        var noise = function (x, y, z) {
+          if (noiseProfile.generator === undefined) {
+            // caching
+            noiseProfile.generator = new PerlinNoise(noiseProfile.seed);
+          }
+          var generator = noiseProfile.generator;
+          var effect = 1,
+            k = 1,
+            sum = 0;
+          for (var i = 0; i < noiseProfile.octaves; ++i) {
+            effect *= noiseProfile.fallout;
+            switch (arguments.length) {
+              case 1:
+                sum += (effect * (1 + generator.noise1d(k * x))) / 2;
+                break;
+              case 2:
+                sum += (effect * (1 + generator.noise2d(k * x, k * y))) / 2;
+                break;
+              case 3:
+                sum +=
+                  (effect * (1 + generator.noise3d(k * x, k * y, k * z))) / 2;
+                break;
+            }
+            k *= 2;
+          }
+          return sum;
+        };
+        var PVector = function (x, y, z) {
+          this.x = x;
+          this.y = y;
+          this.z = z;
+          this.set = function (x, y, z) {
+            if (y === undefined) {
+              this.x = x.x;
+              this.y = x.y;
+              this.z = x.z;
+            } else {
+              this.x = x;
+              this.y = y;
+              this.z = z;
+            }
+          };
+          this.normalize = function () {
+            var mag = Math.sqrt(
+              this.x * this.x + this.y * this.y + this.z * this.z
+            );
+            this.x /= mag;
+            this.y /= mag;
+            this.z /= mag;
+          };
+          this.add = function (v) {
+            this.x += v.x;
+            this.y += v.y;
+            this.z += v.z;
+          };
+          this.mult = function (m) {
+            this.x *= m;
+            this.y *= m;
+            this.z *= m;
+          };
+        };
+        var rect = function (x, y, w, h) {
+          ctx.fillRect(x, y, w, h);
+        };
+        var fill = function (r, g, b) {
+          if (g === undefined) {
+            g = r;
+            b = r;
+          }
+          ctx.fillStyle = "rgb(" + r + ", " + g + ", " + b + ")";
+        };
+        var stroke = function (r, g, b) {
+          if (g === undefined) {
+            g = r;
+            b = r;
+          }
+          ctx.strokeStyle = "rgb(" + r + ", " + g + ", " + b + ")";
+        };
+        var line = function (x1, y1, x2, y2) {
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        };
+
+        function fastText(txt, x, y, h) {
+          h = h || 0;
+          var lines = txt.split("\n");
+          for (var i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], x, y + h * i);
+          }
+        }
+
+        function textSize(size) {
+          ctx.font = size + "px Sans-Serif";
+        }
+        var text = fastText;
+        var strokeWeight = function (num) {
+          ctx.lineWidth = num;
+        };
+        var HAND = "pointer";
+        var CROSS = "crosshair";
+        var LEFT = 37,
+          UP = 38,
+          RIGHT = 39,
+          DOWN = 40;
+        var cursor = function (type) {
+          canvas.style.cursor = type;
+        };
+        randomSeed((Math.random() * 10000000) | 0);
+        {
+          var fov = 70; // Field of view in degrees
+          var version = "Alpha 0.3";
+          var reach = 5; // Max distance player can place or break blocks
+          var blockIds = {};
+          blockData.forEach(function (block) {
+            blockIds[block.name] = block.id;
+          });
+          (function () {
+            var defs = [
+              ["oakLog", "log"],
+              ["acaciaLog", "log"],
+              ["birchLog", "log"],
+              ["darkOakLog", "log"],
+              ["jungleLog", "log"],
+              ["spruceLog", "log"],
+              ["oakStairs", "stairs"],
+              ["spruceStairs", "stairs"],
+              ["birchStairs", "stairs"],
+              ["jungleStairs", "stairs"],
+              ["acaciaStairs", "stairs"],
+              ["darkOakStairs", "stairs"],
+              ["oakSlab", "slab"],
+              ["spruceSlab", "slab"],
+              ["birchSlab", "slab"],
+              ["jungleSlab", "slab"],
+              ["acaciaSlab", "slab"],
+              ["darkOakSlab", "slab"],
+              ["oakDoor", "door", "oakDoorLower", "oakDoorUpper"],
+              ["spruceDoor", "door", "spruceDoorLower", "spruceDoorUpper"],
+              ["birchDoor", "door", "birchDoorLower", "birchDoorUpper"],
+              ["jungleDoor", "door", "jungleDoorLower", "jungleDoorUpper"],
+              ["acaciaDoor", "door", "acaciaDoorLower", "acaciaDoorUpper"],
+              ["darkOakDoor", "door", "darkOakDoorLower", "darkOakDoorUpper"],
+            ];
+            for (var i = 0; i < defs.length; i++) {
+              var cid = blockIds[defs[i][0]];
+              if (cid === undefined) continue;
+              var entry = { type: defs[i][1] };
+              if (defs[i][1] === "door") {
+                entry.doorTexLower = defs[i][2];
+                entry.doorTexUpper = defs[i][3];
+              }
+              customIds[cid] = entry;
+            }
+          })();
+          var currentFov, targetFov, fovTime;
+          var renderDistance;
+          var generatedChunks;
+          var mouseX, mouseY;
+          var width = window.innerWidth;
+          var height = window.innerHeight;
+          var generator = {
+            height: 80,
+            smooth: 0.01,
+          };
+          var worldType = "default";
+          var gameMode = "survival";
+          var structuresEnabled = true;
+          var maxHeight = 255;
+          var terrainHeight = function (wx, wz) {
+            if (worldType === "flat") {
+              return 4;
+            }
+            var smoothness = generator.smooth;
+            var hilliness = generator.height;
+            var biomeVariant = worldSeed % 8;
+            var macroSmooth = smoothness * 0.3;
+            var microSmooth = smoothness * 2.5;
+            var macroScale = hilliness * (0.4 + (biomeVariant % 4) * 0.2);
+            var microScale = hilliness * 0.18;
+            var baseHeight = 20 + (biomeVariant % 5) * 8;
+            var macroN = noise(wx * macroSmooth, wz * macroSmooth);
+            var microN = noise(
+              wx * microSmooth + 1000,
+              wz * microSmooth + 1000
+            );
+            var regionN = noise(
+              wx * smoothness * 0.08 + 500,
+              wz * smoothness * 0.08 + 500
+            );
+            var terrainN, gen;
+            if (regionN > 0.6) {
+              terrainN = macroN * 0.8 + microN * 0.2;
+              gen = Math.round(
+                baseHeight + terrainN * macroScale * 1.4 + microN * microScale
+              );
+            } else if (regionN > 0.35) {
+              terrainN = macroN * 0.6 + microN * 0.4;
+              gen = Math.round(
+                baseHeight + terrainN * macroScale * 0.7 + microN * microScale
+              );
+            } else {
+              terrainN = macroN * 0.3 + microN * 0.7;
+              gen = Math.round(
+                baseHeight +
+                  terrainN * macroScale * 0.25 +
+                  microN * microScale * 0.5
+              );
+            }
+            if (gen < 8) gen = 8;
+            if (gen > maxHeight - 10) gen = maxHeight - 10;
+            return gen;
+          };
+          var blockOutlines = false;
+          var blockFill = true;
+          var updateHUD = true;
+          var textureMap;
+          var textureCoords;
+          var texCoordsBuffers;
+          var bigArray = bigArray || newFloat32Array(8000000);
+          var screen;
+          angleMode = "radians";
+          var hitBox = {};
+          // 2D HUDからワールド面を正しく投影するため、毎フレームのカメラ行列を保持
+          var cameraModelView = newFloat32Array(16);
+          var holding = 0;
+          var Key = {};
+          var g;
+          var modelView = modelView || newFloat32Array(16);
+          var glCache;
+          var nearH;
+          var freezeFrame = 0;
+          var p;
+          var vec1 = new PVector(),
+            vec2 = new PVector(),
+            vec3 = new PVector(),
+            vec4 = new PVector();
+          var move = {
+            x: 0,
+            y: 0,
+            z: 0,
+            ang: Math.sqrt(0.5),
+          };
+          var p2 = {
+            x: 0,
+            y: 0,
+            z: 0,
+          };
+          var place, pauseIMG;
+          var inventory = {
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            main: [
+              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+            ],
+            hotbarSlot: 0,
+            hotbarCounts: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            mainCounts: new Array(27).fill(0),
+            size: 40,
+            holding: 0,
+            holdingCount: 0,
+          };
+        }
+        var MAX_STACK = 64;
+        function normalizeInventoryCounts() {
+          if (!inventory.hotbarCounts || inventory.hotbarCounts.length !== 9)
+            inventory.hotbarCounts = new Array(9).fill(1);
+          if (!inventory.mainCounts || inventory.mainCounts.length !== 27)
+            inventory.mainCounts = new Array(27).fill(0);
+          for (var i = 0; i < 9; i++) {
+            if (!inventory.hotbar[i]) inventory.hotbarCounts[i] = 0;
+            else if (!inventory.hotbarCounts[i]) inventory.hotbarCounts[i] = 1;
+            inventory.hotbarCounts[i] = Math.min(
+              MAX_STACK,
+              inventory.hotbarCounts[i]
+            );
+          }
+          for (var j = 0; j < 27; j++) {
+            if (!inventory.main[j]) inventory.mainCounts[j] = 0;
+            else if (!inventory.mainCounts[j]) inventory.mainCounts[j] = 1;
+            inventory.mainCounts[j] = Math.min(
+              MAX_STACK,
+              inventory.mainCounts[j]
+            );
+          }
+        }
+        function addItemToInventory(item, amount) {
+          if (!item || amount <= 0) return amount;
+          normalizeInventoryCounts();
+          var left = amount;
+          for (var i = 0; i < 9 && left > 0; i++)
+            if (
+              inventory.hotbar[i] === item &&
+              inventory.hotbarCounts[i] < MAX_STACK
+            ) {
+              var n = Math.min(left, MAX_STACK - inventory.hotbarCounts[i]);
+              inventory.hotbarCounts[i] += n;
+              left -= n;
+            }
+          for (var j = 0; j < 27 && left > 0; j++)
+            if (
+              inventory.main[j] === item &&
+              inventory.mainCounts[j] < MAX_STACK
+            ) {
+              var n2 = Math.min(left, MAX_STACK - inventory.mainCounts[j]);
+              inventory.mainCounts[j] += n2;
+              left -= n2;
+            }
+          for (var k = 0; k < 9 && left > 0; k++)
+            if (!inventory.hotbar[k]) {
+              inventory.hotbar[k] = item;
+              inventory.hotbarCounts[k] = Math.min(left, MAX_STACK);
+              left -= inventory.hotbarCounts[k];
+            }
+          for (var m = 0; m < 27 && left > 0; m++)
+            if (!inventory.main[m]) {
+              inventory.main[m] = item;
+              inventory.mainCounts[m] = Math.min(left, MAX_STACK);
+              left -= inventory.mainCounts[m];
+            }
+          updateHUD = true;
+          return left;
+        }
+        function consumeSelectedItem() {
+          if (gameMode !== "survival") return true;
+          normalizeInventoryCounts();
+          var idx = inventory.hotbarSlot;
+          if (!inventory.hotbar[idx] || inventory.hotbarCounts[idx] <= 0)
+            return false;
+          inventory.hotbarCounts[idx]--;
+          if (inventory.hotbarCounts[idx] <= 0) {
+            inventory.hotbar[idx] = 0;
+            inventory.hotbarCounts[idx] = 0;
+            holding = 0;
+          }
+          updateHUD = true;
+          return true;
+        }
+        function blockBreakDuration(id) {
+          var name = blockData[id] ? blockData[id].name : "";
+          var times = {
+            grass: 0.6,
+            dirt: 0.6,
+            sand: 0.5,
+            gravel: 0.6,
+            stone: 1.5,
+            cobblestone: 1.5,
+            stoneBricks: 1.5,
+            mossyCobble: 1.5,
+            bricks: 1.5,
+            oakPlanks: 1.0,
+            craftingTable: 1.0,
+            furnace: 1.5,
+            oakLog: 1.5,
+            birchLog: 1.5,
+            spruceLog: 1.5,
+            jungleLog: 1.5,
+            darkOakLog: 1.5,
+            acaciaLog: 1.5,
+            leaves: 0.2,
+            glass: 0.3,
+            bedrock: 99999,
+            obsidian: 5.0,
+          };
+          return times[name] || 1.0;
+        }
+        var breakState = { key: "", start: 0 };
+        // サバイバルで破壊したブロックのドロップアイテム
+        var droppedItems = [];
+        var DROP_LIFETIME = 5 * 60 * 1000;
+        // ドロップは近い同種アイテムをスタックして、落下物が大量にあっても軽くする
+        var DROP_MAX_ITEMS = 96;
+        function spawnDroppedItem(id, x, y, z) {
+          if (gameMode !== "survival" || !id) return;
+          var now = Date.now();
+          var dx0 = x + 0.5,
+            dy0 = y + 0.35,
+            dz0 = z + 0.5;
+          // 同じブロックのドロップは1個の小さなブロックにまとめる
+          for (var i = 0; i < droppedItems.length; i++) {
+            var d = droppedItems[i];
+            if (
+              d.id === id &&
+              Math.abs(d.x - dx0) < 0.6 &&
+              Math.abs(d.z - dz0) < 0.6 &&
+              Math.abs(d.y - dy0) < 1.0
+            ) {
+              d.count = (d.count || 1) + 1;
+              d.born = now;
+              return;
+            }
+          }
+          // 上限を設け、古い落下物から整理して描画負荷を抑える
+          if (droppedItems.length >= DROP_MAX_ITEMS) {
+            droppedItems.sort(function (a, b) {
+              return (a.born || 0) - (b.born || 0);
+            });
+            droppedItems.splice(
+              0,
+              Math.max(1, droppedItems.length - DROP_MAX_ITEMS + 1)
+            );
+          }
+          droppedItems.push({
+            id: id,
+            count: 1,
+            x: dx0,
+            y: dy0,
+            z: dz0,
+            vx: (Math.random() - 0.5) * 0.035,
+            vz: (Math.random() - 0.5) * 0.035,
+            vy: 0.11,
+            born: now,
+            spin: Math.random() * Math.PI * 2,
+            spinX: Math.random() * Math.PI * 2,
+            spinY: Math.random() * Math.PI * 2,
+          });
+        }
+        function updateDroppedItems() {
+          if (gameMode !== "survival") {
+            droppedItems = [];
+            return;
+          }
+          var now = Date.now();
+          for (var i = droppedItems.length - 1; i >= 0; i--) {
+            var d = droppedItems[i];
+            if (now - d.born >= DROP_LIFETIME) {
+              droppedItems.splice(i, 1);
+              continue;
+            }
+            // 落下しながら少しだけ横へ飛び、すべてのドロップを回転させる
+            d.vy -= 0.012;
+            d.y += d.vy;
+            d.x += d.vx || 0;
+            d.z += d.vz || 0;
+            d.vx = (d.vx || 0) * 0.985;
+            d.vz = (d.vz || 0) * 0.985;
+            var ground = terrainHeight(Math.floor(d.x), Math.floor(d.z)) + 0.18;
+            var under =
+              world && world.getBlock
+                ? world.getBlock(
+                    Math.floor(d.x),
+                    Math.floor(d.y - 0.25),
+                    Math.floor(d.z)
+                  )
+                : 0;
+            if (under && d.y < Math.floor(d.y) + 0.85) {
+              d.y = Math.floor(d.y) + 0.85;
+              d.vy = 0;
+            }
+            if (!under && d.y < ground) {
+              d.y = ground;
+              d.vy = 0;
+            }
+            d.spin += 0.06;
+            d.spinX = (d.spinX || 0) + 0.045;
+            d.spinY = (d.spinY || 0) + 0.06;
+            var dx = p.x - d.x,
+              dy = p.y - 0.5 - d.y,
+              dz = p.z - d.z;
+            if (dx * dx + dy * dy + dz * dz <= 1.8 * 1.8) {
+              var picked = Math.max(1, d.count || 1);
+              var left = addItemToInventory(d.id, picked);
+              if (left <= 0) {
+                droppedItems.splice(i, 1);
+              } else {
+                d.count = left;
+              }
+            }
+          }
+        }
+        function renderDroppedItems() {
+          if (gameMode !== "survival" || !droppedItems.length) return;
+          // 落下物は最大96個まで。各落下物は実際のブロックを縮小して描画する。
+          for (var i = 0; i < droppedItems.length && i < DROP_MAX_ITEMS; i++) {
+            var d = droppedItems[i];
+            if (!blockData[d.id]) continue;
+            copyArr(modelView, matrix);
+            // ブロックの中心へ移動してから基底軸だけを縮小。
+            // box2は原点中心の立方体を描くので、座標を渡すのではなく
+            // モデルビュー行列側で位置を指定する。
+            trans(modelView, d.x, d.y, d.z);
+            // 落下中もブロックらしい立方体のまま回転
+            rotY(modelView, d.spinY || d.spin || 0);
+            rotX(modelView, d.spinX || 0);
+            var sc = 0.32;
+            modelView[0] *= sc;
+            modelView[1] *= sc;
+            modelView[2] *= sc;
+            modelView[4] *= sc;
+            modelView[5] *= sc;
+            modelView[6] *= sc;
+            modelView[8] *= sc;
+            modelView[9] *= sc;
+            modelView[10] *= sc;
+            matMult();
+            transpose(matrix);
+            uniformMatrix("view3d", programObject3D, "uView", false, matrix);
+            box2(0, 0, 0, 0xff, blockData[d.id].textures);
+          }
+        }
+        // ============================================================
+        // モブ（豚・牛・ヒツジ・鶏）システム  v2
+        //  - マイクラ風マルチボックス3Dモデル（頭・胴・4本脚＋付属パーツ）
+        //  - 攻撃：赤点滅／ノックバック／HP／消滅の煙
+        //  - 当たり判定：重力・接地・壁・1ブロック段差（鶏はゆっくり落下）
+        //  - 自然発生（草ブロック上）／5%でチビが生まれ、やがて成長
+        // ============================================================
+        var mobs = [];
+        var mobParticles = [];
+        var MOB_MAX = 48;
+        var MOB_NEAR_CAP = 14;
+        var MOB_NEAR_RADIUS = 80;
+        var MOB_SPAWN_INTERVAL = 2500;
+        var MOB_SPAWN_MIN_DIST = 22;
+        var MOB_SPAWN_MAX_DIST = 44;
+        var MOB_DESPAWN_DIST = 160;
+        var MOB_BABY_CHANCE = 0.05;
+        var MOB_BABY_GROW_MS = 90000;
+        var MOB_VISIBLE_MARGIN = 1;
+        var MOB_TAU = Math.PI * 2;
+        var MOB_GRAVITY = -0.032;
+        var MOB_ATTACK_REACH = 4.0;
+        var MOB_HURT_FLASH_MS = 320;
+        var MOB_KNOCK_MS = 420;
+        var MOB_FACE_SHADE = [0.62, 1.0, 0.86, 0.8, 0.7, 0.66];
+        var MOB_SIDE_NAMES = [
+          "top",
+          "bottom",
+          "north",
+          "south",
+          "east",
+          "west",
+        ];
+        var mobSpawnEggTypes = null;
+        var mobsPausedCount = 0;
+        var mobLastSpawnAt = 0;
+        var mobLastCullAt = 0;
+        var mobShadowBuffer = null;
+        var starterEggsGiven = false;
+
+        // Minecraftの公式/公式サンプルモデルの寸法を16px=1ブロックとして使用。
+        // パーツの形・位置・歩行軸を自由にアレンジせず、元モデルの構成に合わせる。
+        var MOB_DEFS = {
+          pig: {
+            label: "豚",
+            hp: 10,
+            hitW: 0.95,
+            hitH: 1.725,
+            speed: 0.03,
+            turn: 0.06,
+            walkRate: 0.32,
+            legAmp: 0.34,
+            headBob: 0,
+            slowFall: false,
+            mobYOffset: -20,
+            parts: [
+              [0, 0.95, 0, 0.95, 0.9, 1.5, "mobPigSkin", "body", 0],
+              [
+                0,
+                1.35,
+                0.75,
+                0.75,
+                0.75,
+                0.75,
+                [
+                  "mobPigSkin",
+                  "mobPigSkin",
+                  "mobPigFace",
+                  "mobPigSkin",
+                  "mobPigSkin",
+                  "mobPigSkin",
+                ],
+                "head",
+                0,
+              ],
+              [
+                0,
+                1.25,
+                1.18,
+                0.42,
+                0.25,
+                0.22,
+                [
+                  "mobPigSkin",
+                  "mobPigSkin",
+                  "mobPigSnout",
+                  "mobPigSkin",
+                  "mobPigSkin",
+                  "mobPigSkin",
+                ],
+                "",
+                0,
+              ],
+              [-0.3, 0.25, 0.5, 0.3, 0.5, 0.3, "mobPigSkin", "leg", 0],
+              [0.3, -0.25, 0.5, 0.3, 0.5, 0.3, "mobPigSkin", "leg", 0],
+              [-0.3, 0.25, -0.5, 0.3, 0.5, 0.3, "mobPigSkin", "leg", 0],
+              [0.3, -0.25, -0.5, 0.3, 0.5, 0.3, "mobPigSkin", "leg", 0],
+            ],
+          },
+          cow: {
+            label: "牛",
+            hp: 10,
+            hitW: 1.1,
+            hitH: 2.14,
+            speed: 0.028,
+            turn: 0.055,
+            walkRate: 0.22,
+            legAmp: 0.38,
+            headBob: 0,
+            slowFall: false,
+            mobYOffset: -0.5,
+            parts: [
+              [0, 1.1, 0, 1.1, 1.0, 1.8, "mobCowSkin", "body", 0],
+              [
+                0,
+                1.6,
+                0.9,
+                0.8,
+                0.8,
+                0.8,
+                [
+                  "mobCowSkin",
+                  "mobCowSkin",
+                  "mobCowFace",
+                  "mobCowSkin",
+                  "mobCowSkin",
+                  "mobCowSkin",
+                ],
+                "head",
+                0,
+              ],
+              [-0.45, 1.98, 0.8, 0.18, 0.32, 0.18, "mobCowHorn", "", 0],
+              [0.45, 1.98, 0.8, 0.18, 0.32, 0.18, "mobCowHorn", "", 0],
+              [-0.38, 0.4, 0.65, 0.32, 0.8, 0.32, "mobCowSkin", "leg", 0],
+              [0.38, -0.4, 0.65, 0.32, 0.8, 0.32, "mobCowSkin", "leg", 0],
+              [-0.38, 0.4, -0.65, 0.32, 0.8, 0.32, "mobCowSkin", "leg", 0],
+              [0.38, -0.4, -0.65, 0.32, 0.8, 0.32, "mobCowSkin", "leg", 0],
+            ],
+          },
+          sheep: {
+            label: "ヒツジ",
+            hp: 8,
+            hitW: 1.25,
+            hitH: 1.79,
+            speed: 0.029,
+            turn: 0.055,
+            walkRate: 0.24,
+            legAmp: 0.38,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 1.05, 0, 1.25, 1.05, 1.75, "mobSheepWool", "body", 0],
+              [0, 1.43, 0.96, 0.72, 0.72, 0.72, "mobSheepFace", "head", 0],
+              [-0.2, 1.51, 1.325, 0.09, 0.09, 0.035, "mobSheepEye", "", 0],
+              [0.2, 1.51, 1.325, 0.09, 0.09, 0.035, "mobSheepEye", "", 0],
+              [-0.43, 0.31, 0.62, 0.28, 0.62, 0.28, "mobSheepSkin", "leg", 0],
+              [0.43, -0.31, 0.62, 0.28, 0.62, 0.28, "mobSheepSkin", "leg", 0],
+              [-0.43, 0.31, -0.62, 0.28, 0.62, 0.28, "mobSheepSkin", "leg", 0],
+              [0.43, -0.31, -0.62, 0.28, 0.62, 0.28, "mobSheepSkin", "leg", 0],
+            ],
+          },
+          chicken: {
+            label: "ニワトリ",
+            hp: 4,
+            hitW: 0.6,
+            hitH: 1.325,
+            speed: 0.036,
+            turn: 0.075,
+            walkRate: 0.34,
+            legAmp: 0.1,
+            headBob: 0,
+            slowFall: true,
+            parts: [
+              [0, 0.7, 0, 0.6, 0.6, 0.8, "mobChickenSkin", "body", 0],
+              [-0.28, 0.7, 0, 0.12, 0.25, 0.38, "mobChickenWing", "wing", 1],
+              [0.28, 0.7, 0, 0.12, 0.25, 0.38, "mobChickenWing", "wing", -1],
+              [
+                0,
+                1.1,
+                0.35,
+                0.35,
+                0.45,
+                0.35,
+                [
+                  "mobChickenSkin",
+                  "mobChickenSkin",
+                  "mobChickenFace",
+                  "mobChickenSkin",
+                  "mobChickenSkin",
+                  "mobChickenSkin",
+                ],
+                "head",
+                0,
+              ],
+              [0, 1.05, 0.6, 0.28, 0.16, 0.28, "mobChickenLeg", "", 0],
+              [0, 0.88, 0.57, 0.14, 0.22, 0.14, "mobChickenWattle", "", 0],
+              [-0.14, 0.2, 0, 0.1, 0.4, 0.1, "mobChickenLeg", "leg", 0],
+              [0.14, -0.2, 0, 0.1, 0.4, 0.1, "mobChickenLeg", "leg", 0],
+            ],
+          },
+          cat: {
+            label: "ネコ",
+            hp: 10,
+            hitW: 0.68,
+            hitH: 1.86,
+            speed: 0.034,
+            turn: 0.07,
+            walkRate: 0.3,
+            legAmp: 0.34,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 0.82, 0, 0.62, 0.72, 1.05, "mobCatFur", "body", 0],
+              [0, 0.72, 0.34, 0.64, 0.46, 0.45, "mobCatWhite", "", 0],
+              [0, 1.35, 0.62, 0.68, 0.62, 0.62, "mobCatFur", "head", 0],
+              [-0.23, 1.75, 0.62, 0.18, 0.22, 0.18, "mobCatFur", "head", 0],
+              [0.23, 1.75, 0.62, 0.18, 0.22, 0.18, "mobCatFur", "head", 0],
+              [
+                -0.2,
+                1.42,
+                0.935,
+                0.11,
+                0.11,
+                0.035,
+                [
+                  "mobCatFur",
+                  "mobCatFur",
+                  "mobCatEye",
+                  "mobCatFur",
+                  "mobCatFur",
+                  "mobCatFur",
+                ],
+                "",
+                0,
+              ],
+              [
+                0.2,
+                1.42,
+                0.935,
+                0.11,
+                0.11,
+                0.035,
+                [
+                  "mobCatFur",
+                  "mobCatFur",
+                  "mobCatEye",
+                  "mobCatFur",
+                  "mobCatFur",
+                  "mobCatFur",
+                ],
+                "",
+                0,
+              ],
+              [0, 1.25, 0.97, 0.1, 0.08, 0.07, "mobCatNose", "", 0],
+              [-0.2, 0.225, 0.35, 0.18, 0.45, 0.18, "mobCatFur", "leg", 0],
+              [0.2, -0.225, 0.35, 0.18, 0.45, 0.18, "mobCatFur", "leg", 0],
+              [-0.2, 0.225, -0.35, 0.18, 0.45, 0.18, "mobCatFur", "leg", 0],
+              [0.2, -0.225, -0.35, 0.18, 0.45, 0.18, "mobCatFur", "leg", 0],
+              [0, 0.85, -0.5, 0.16, 0.16, 0.75, "mobCatFur", "tail", -0.45],
+            ],
+          },
+          bee: {
+            label: "ミツバチ",
+            hp: 10,
+            hitW: 0.72,
+            hitH: 1.7,
+            speed: 0.04,
+            turn: 0.09,
+            walkRate: 0.3,
+            legAmp: 0,
+            headBob: 0,
+            slowFall: true,
+            parts: [
+              [0, 1.25, 0, 0.72, 0.72, 1.05, "mobBeeBody", "body", 0],
+              [0, 1.28, 0.73, 0.62, 0.62, 0.58, "mobBeeHead", "head", 0],
+              [-0.18, 1.34, 1.03, 0.1, 0.1, 0.035, "mobBeeHead", "", 0],
+              [0.18, 1.34, 1.03, 0.1, 0.1, 0.035, "mobBeeHead", "", 0],
+              [-0.48, 1.62, 0.02, 0.62, 0.05, 0.48, "mobBeeWing", "wing", 1],
+              [0.48, 1.62, 0.02, 0.62, 0.05, 0.48, "mobBeeWing", "wing", -1],
+            ],
+          },
+          axolotl: {
+            label: "ウーパールーパー",
+            hp: 14,
+            hitW: 0.6,
+            hitH: 0.73,
+            speed: 0.025,
+            turn: 0.08,
+            walkRate: 0.24,
+            legAmp: 0.18,
+            headBob: 0,
+            slowFall: true,
+            parts: [
+              [0, 0.5, 0, 0.55, 0.4, 1.1, "mobAxolotlPink", "body", 0],
+              [0, 0.5, -0.68, 0.08, 0.45, 0.65, "mobAxolotlFrill", "", 0],
+              [
+                0,
+                0.5,
+                0.65,
+                0.6,
+                0.38,
+                0.45,
+                [
+                  "mobAxolotlPink",
+                  "mobAxolotlPink",
+                  "mobAxolotlFace",
+                  "mobAxolotlPink",
+                  "mobAxolotlPink",
+                  "mobAxolotlPink",
+                ],
+                "head",
+                0,
+              ],
+              [-0.36, 0.5, 0.6, 0.22, 0.08, 0.08, "mobAxolotlFrill", "", 0],
+              [-0.36, 0.6, 0.6, 0.22, 0.08, 0.08, "mobAxolotlFrill", "", 0],
+              [-0.36, 0.4, 0.6, 0.22, 0.08, 0.08, "mobAxolotlFrill", "", 0],
+              [0.36, 0.5, 0.6, 0.22, 0.08, 0.08, "mobAxolotlFrill", "", 0],
+              [0.36, 0.6, 0.6, 0.22, 0.08, 0.08, "mobAxolotlFrill", "", 0],
+              [0.36, 0.4, 0.6, 0.22, 0.08, 0.08, "mobAxolotlFrill", "", 0],
+              [-0.28, 0.3, 0.3, 0.15, 0.22, 0.15, "mobAxolotlPink", "leg", 0],
+              [0.28, 0.05, 0.3, 0.15, 0.22, 0.15, "mobAxolotlPink", "leg", 0],
+              [-0.28, 0.3, -0.3, 0.15, 0.22, 0.15, "mobAxolotlPink", "leg", 0],
+              [0.28, 0.05, -0.3, 0.15, 0.22, 0.15, "mobAxolotlPink", "leg", 0],
+            ],
+          },
+          villager: {
+            label: "村人",
+            hp: 20,
+            hitW: 0.86,
+            hitH: 2.46,
+            speed: 0.024,
+            turn: 0.05,
+            walkRate: 0.25,
+            legAmp: 0.28,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 1.0, 0, 0.78, 1.3, 0.55, "mobVillagerRobe", "body", 0],
+              [0, 1.18, 0.34, 0.86, 0.4, 0.48, "mobVillagerRobe", "", 0],
+              [0, 2.0, 0, 0.78, 0.82, 0.78, "mobVillagerFace", "head", 0],
+              [-0.19, 2.07, 0.415, 0.09, 0.09, 0.035, "mobVillagerEye", "", 0],
+              [0.19, 2.07, 0.415, 0.09, 0.09, 0.035, "mobVillagerEye", "", 0],
+              [0, 2.43, 0, 0.84, 0.18, 0.84, "mobVillagerHat", "", 0],
+              [0, 1.87, 0.48, 0.24, 0.34, 0.32, "mobVillagerSkin", "", 0],
+              [-0.2, 0.25, 0, 0.3, 0.5, 0.38, "mobVillagerRobe", "leg", 0],
+              [0.2, -0.25, 0, 0.3, 0.5, 0.38, "mobVillagerRobe", "leg", 0],
+            ],
+          },
+          wolf: {
+            label: "オオカミ",
+            hp: 8,
+            hitW: 0.7,
+            hitH: 1.5,
+            speed: 0.034,
+            turn: 0.07,
+            walkRate: 0.3,
+            legAmp: 0.34,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 0.88, 0, 0.7, 0.7, 1.15, "mobWolfCoat", "body", 0],
+              [0, 1.42, 0.68, 0.7, 0.66, 0.62, "mobWolfFace", "head", 0],
+              [0, 1.32, 1.1, 0.38, 0.28, 0.34, "mobWolfMuzzle", "", 0],
+              [0, 0.61, 0, 0.73, 0.12, 1.05, "mobWolfCollar", "", 0],
+              [-0.2, 0.225, 0.35, 0.18, 0.45, 0.18, "mobWolfCoat", "leg", 0],
+              [
+                0.2,
+                0.225,
+                0.35,
+                0.18,
+                0.45,
+                0.18,
+                "mobWolfCoat",
+                "leg",
+                Math.PI,
+              ],
+              [
+                -0.2,
+                0.225,
+                -0.35,
+                0.18,
+                0.45,
+                0.18,
+                "mobWolfCoat",
+                "leg",
+                Math.PI,
+              ],
+              [0.2, 0.225, -0.35, 0.18, 0.45, 0.18, "mobWolfCoat", "leg", 0],
+              [0, 0.95, -0.78, 0.16, 0.16, 0.5, "mobWolfCoat", "", -0.55],
+            ],
+          },
+          golem: {
+            label: "アイアンゴーレム",
+            hp: 100,
+            hitW: 1.35,
+            hitH: 4.05,
+            speed: 0.018,
+            turn: 0.035,
+            walkRate: 0.18,
+            legAmp: 0.28,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 2.05, 0, 1.35, 1.55, 0.78, "mobGolemBody", "body", 0],
+              [0, 3.3, 0, 0.8, 0.85, 0.8, "mobGolemFace", "head", 0],
+              [0, 3.18, 0.45, 0.2, 0.38, 0.22, "mobGolemBody", "", 0],
+              [0.96, 1.9, 0, 0.42, 1.85, 0.5, "mobGolemBody", "", 0],
+              [-0.96, 1.9, 0, 0.42, 1.85, 0.5, "mobGolemBody", "", 0],
+              [-0.35, 0.58, 0, 0.42, 1.15, 0.45, "mobGolemBody", "leg", 0],
+              [0.35, 0.58, 0, 0.42, 1.15, 0.45, "mobGolemBody", "leg", Math.PI],
+            ],
+          },
+          enderman: {
+            label: "エンダーマン",
+            hp: 40,
+            hitW: 0.62,
+            hitH: 3.6,
+            speed: 0.035,
+            turn: 0.06,
+            walkRate: 0.24,
+            legAmp: 0.3,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 2.1, 0, 0.5, 1.1, 0.28, "mobEnderman", "body", 0],
+              [0, 2.8, 0, 0.62, 0.62, 0.62, "mobEnderFace", "head", 0],
+              [0, 2.84, 0.33, 0.16, 0.07, 0.035, "mobEnderFace", "", 0],
+              [0.35, 1.8, 0, 0.12, 1.9, 0.12, "mobEnderman", "", 0],
+              [-0.35, 1.8, 0, 0.12, 1.9, 0.12, "mobEnderman", "", 0],
+              [-0.16, 0.8, 0, 0.12, 1.6, 0.12, "mobEnderman", "leg", 0],
+              [0.16, 0.8, 0, 0.12, 1.6, 0.12, "mobEnderman", "leg", Math.PI],
+            ],
+          },
+          creeper: {
+            label: "クリーパー",
+            hp: 20,
+            hitW: 0.7,
+            hitH: 2.55,
+            speed: 0.032,
+            turn: 0.06,
+            walkRate: 0.26,
+            legAmp: 0.38,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 1.15, 0, 0.7, 1.3, 0.4, "mobCreeperBody", "body", 0],
+              [0, 2.15, 0, 0.8, 0.8, 0.8, "mobCreeperFace", "head", 0],
+              [-0.22, 0.25, 0.25, 0.32, 0.5, 0.32, "mobCreeperBody", "leg", 0],
+              [
+                0.22,
+                0.25,
+                0.25,
+                0.32,
+                0.5,
+                0.32,
+                "mobCreeperBody",
+                "leg",
+                Math.PI,
+              ],
+              [
+                -0.22,
+                0.25,
+                -0.25,
+                0.32,
+                0.5,
+                0.32,
+                "mobCreeperBody",
+                "leg",
+                Math.PI,
+              ],
+              [0.22, 0.25, -0.25, 0.32, 0.5, 0.32, "mobCreeperBody", "leg", 0],
+            ],
+          },
+          zombie: {
+            label: "ゾンビ",
+            hp: 20,
+            hitW: 0.8,
+            hitH: 3.05,
+            speed: 0.027,
+            turn: 0.055,
+            walkRate: 0.25,
+            legAmp: 0.4,
+            headBob: 0,
+            slowFall: false,
+            parts: [
+              [0, 1.55, 0, 0.8, 1.2, 0.42, "mobZombieShirt", "body", 0],
+              [0, 2.42, 0, 0.82, 0.82, 0.82, "mobZombieFace", "head", 0],
+              [0.56, 1.55, 0, 0.28, 1.2, 0.28, "mobZombieShirt", "", 0],
+              [-0.56, 1.55, 0, 0.28, 1.2, 0.28, "mobZombieShirt", "", 0],
+              [-0.22, 0.6, 0, 0.28, 1.2, 0.34, "mobZombiePants", "leg", 0],
+              [0.22, 0.6, 0, 0.28, 1.2, 0.34, "mobZombiePants", "leg", Math.PI],
+            ],
+          },
+        };
+        var MOB_TYPES = [
+          "pig",
+          "cow",
+          "sheep",
+          "chicken",
+          "cat",
+          "axolotl",
+          "villager",
+        ];
+        // Minecraftギャラリーのモデル比率をそのまま使い、
+        // モデル全体を均一に縮尺して「足裏=0」にそろえる。
+        // 村人は2ブロック、それ以外の友好モブは1ブロック。
+        (function prepareMobDefs() {
+          for (var k in MOB_DEFS) {
+            var ps = MOB_DEFS[k].parts;
+            for (var i = 0; i < ps.length; i++) {
+              if (typeof ps[i][6] === "string") {
+                var t = ps[i][6];
+                ps[i][6] = [t, t, t, t, t, t];
+              }
+            }
+          }
+        })();
+
+        // 参考HTMLのモデル寸法・位置をそのまま使用する。
+        // 全体を別の高さへ正規化すると、参考モデルの足位置まで変わってしまうため、
+        // ここでは拡大縮小・Yオフセットを加えない。各パーツは参考HTMLと同じ座標。
+        (function prepareReferenceMobModels() {
+          for (var k in MOB_DEFS) {
+            var def = MOB_DEFS[k];
+            def.modelScale = 1;
+            def.modelYScale = 1;
+            def.modelYOffset = 0;
+            var minY = Infinity,
+              maxY = -Infinity,
+              maxX = 0;
+            for (var i = 0; i < def.parts.length; i++) {
+              var pa = def.parts[i];
+              if (!pa) continue;
+              var halfH = Math.abs(pa[4]) * 0.5;
+              minY = Math.min(minY, pa[1] - halfH);
+              maxY = Math.max(maxY, pa[1] + halfH);
+              maxX = Math.max(maxX, Math.abs(pa[0]) + Math.abs(pa[3]) * 0.5);
+            }
+            def.hitH = Math.max(0.1, maxY - Math.min(0, minY));
+            def.hitW = Math.max(def.hitW || 0.5, maxX * 2);
+            var legNo = 0;
+            for (var li = 0; li < def.parts.length; li++) {
+              if (def.parts[li][7] === "leg") {
+                def.parts[li][8] = legNo % 2 ? Math.PI : 0;
+                legNo++;
+              }
+            }
+          }
+        })();
+
+        // ブロックID -> モブ種 の対応（blockData 定義後に遅延評価）
+        function getSpawnEggTypes() {
+          if (!mobSpawnEggTypes) {
+            mobSpawnEggTypes = {};
+            var map = {
+              spawnEggPig: "pig",
+              spawnEggCow: "cow",
+              spawnEggSheep: "sheep",
+              spawnEggChicken: "chicken",
+              spawnEggCat: "cat",
+              spawnEggAxolotl: "axolotl",
+              spawnEggVillager: "villager",
+            };
+            for (var k in map) {
+              if (blockIds[k] !== undefined && blockIds[k] > 0)
+                mobSpawnEggTypes[blockIds[k]] = map[k];
+            }
+          }
+          return mobSpawnEggTypes;
+        }
+
+        function mobDef(m) {
+          return MOB_DEFS[m.type];
+        }
+        function mobScale(m) {
+          return 1;
+        }
+        function mobHeight(m) {
+          return mobDef(m).hitH * mobScale(m);
+        }
+
+        function spawnMob(type, x, y, z, baby) {
+          if (!MOB_DEFS[type] || MOB_TYPES.indexOf(type) === -1) return null;
+          if (mobs.length >= MOB_MAX) return null;
+          var m = {
+            type: type,
+            x: x,
+            y: y - 0.5,
+            z: z,
+            vy: 0,
+            kx: 0,
+            kz: 0,
+            ry: Math.random() * MOB_TAU,
+            phase: Math.random() * MOB_TAU,
+            walkAmt: 0,
+            moving: false,
+            wanderAngle: Math.random() * MOB_TAU,
+            wanderTimer: 60 + Math.random() * 180,
+            onGround: false,
+            paused: false,
+            lastActive: 0,
+            baby: !!baby,
+            bornAt: Date.now(),
+            hp: MOB_DEFS[type].hp,
+            maxHp: MOB_DEFS[type].hp,
+            hurtT: 0,
+            fallStartY: null,
+          };
+          mobs.push(m);
+          return m;
+        }
+
+        // 指定した列でモブが立てる地面の高さ（足元のY）を探す
+        function mobGroundY(x, z, startY) {
+          if (!world) return null;
+          var fx = Math.floor(x),
+            fz = Math.floor(z);
+          var top = Math.floor(startY) + 1;
+          for (var yy = top; yy >= top - 24 && yy >= 1; yy--) {
+            if (world.getBlock(fx, yy, fz)) return yy + 1;
+          }
+          return null;
+        }
+
+        // モブ全体の高さを調べて、1マスの隙間などを通り抜けないようにする。
+        function mobBlockedAt(m, x, y, z) {
+          if (!world) return false;
+          var def = mobDef(m);
+          var sc = mobScale(m);
+          var hw = def.hitW * 0.5 * sc;
+          var h = def.hitH * sc;
+          var xs = [x - hw, x, x + hw];
+          var zs = [z - hw, z, z + hw];
+          var y0 = Math.floor(y + 0.08);
+          var y1 = Math.ceil(y + h - 0.08);
+          for (var yy = y0; yy <= y1; yy++) {
+            for (var xi = 0; xi < xs.length; xi++) {
+              for (var zi = 0; zi < zs.length; zi++) {
+                if (world.getBlock(Math.floor(xs[xi]), yy, Math.floor(zs[zi])))
+                  return true;
+              }
+            }
+          }
+          return false;
+        }
+
+        function spawnMobFromEgg(type) {
+          if (!hitBox.pos || !MOB_DEFS[type]) return false;
+          if (mobs.length >= MOB_MAX) return false;
+          var offs = {
+            top: [0, 1, 0],
+            bottom: [0, -1, 0],
+            north: [0, 0, 1],
+            south: [0, 0, -1],
+            east: [1, 0, 0],
+            west: [-1, 0, 0],
+          };
+          var o = offs[hitBox.face] || [0, 1, 0];
+          var sx = hitBox.pos[0] + 0.5 + o[0] + (Math.random() - 0.5) * 0.5;
+          var sz = hitBox.pos[2] + 0.5 + o[2] + (Math.random() - 0.5) * 0.5;
+          var gy = mobGroundY(
+            sx,
+            sz,
+            Math.max(hitBox.pos[1] + o[1], hitBox.pos[1])
+          );
+          if (gy === null) gy = hitBox.pos[1] + 1;
+          var before = mobs.length;
+          spawnMob(type, sx, gy, sz, Math.random() < MOB_BABY_CHANCE);
+          if (mobs.length === before) return false;
+          if (gameMode === "survival") consumeSelectedItem();
+          p.lastPlace = Date.now();
+          updateHUD = true;
+          return true;
+        }
+
+        // ---- 読み込み状況・表示距離（フラット以外では遠いモブを一時停止） ----
+        function mobIsInLoadedChunk(m) {
+          if (!world || !world.chunks) return false;
+          var cx = Math.floor(m.x) >> 4;
+          var cz = Math.floor(m.z) >> 4;
+          var column = world.chunks[cx];
+          if (!column) return false;
+          var ch = column[cz];
+          return !!(ch && (ch.generated || ch.populated));
+        }
+        function mobVisibleDistance() {
+          return (renderDistance + MOB_VISIBLE_MARGIN) * 16;
+        }
+        function mobShouldPause(m) {
+          if (worldType === "flat") return false;
+          if (!mobIsInLoadedChunk(m)) return true;
+          var dx = m.x - p.x,
+            dz = m.z - p.z;
+          var dist2 = dx * dx + dz * dz;
+          var maxD = mobVisibleDistance();
+          if (dist2 > maxD * maxD) return true;
+          if (dist2 > 64) {
+            var d = Math.sqrt(dist2);
+            var lx = -Math.sin(p.ry),
+              lz = Math.cos(p.ry);
+            var dot = (dx * lx + dz * lz) / d;
+            if (dot < -0.25) return true;
+          }
+          return false;
+        }
+
+        // ---- モブの煙パーティクル ----
+        function mobSpawnPoof(x, y, z, scale) {
+          var n = 10;
+          var s = scale || 1;
+          for (var i = 0; i < n; i++) {
+            if (mobParticles.length > 120) break;
+            mobParticles.push({
+              x: x,
+              y: y,
+              z: z,
+              vx: (Math.random() - 0.5) * 0.05,
+              vy: Math.random() * 0.045 + 0.01,
+              vz: (Math.random() - 0.5) * 0.05,
+              life: 1,
+              decay: 0.022 + Math.random() * 0.02,
+              size: (0.16 + Math.random() * 0.14) * s,
+            });
+          }
+        }
+
+        function updateMobParticles() {
+          if (!mobParticles.length) return;
+          for (var i = mobParticles.length - 1; i >= 0; i--) {
+            var q = mobParticles[i];
+            q.x += q.vx;
+            q.y += q.vy;
+            q.z += q.vz;
+            q.vy -= 0.0025;
+            q.vx *= 0.97;
+            q.vz *= 0.97;
+            q.life -= q.decay;
+            if (q.life <= 0) mobParticles.splice(i, 1);
+          }
+        }
+
+        // ---- ダメージ・死亡 ----
+        function hurtMob(m, dmg) {
+          m.hp -= dmg;
+          m.hurtT = win.performance.now();
+          m.moving = false;
+          var dx = m.x - p.x,
+            dz = m.z - p.z;
+          var dl = Math.sqrt(dx * dx + dz * dz);
+          if (dl < 0.0001) {
+            dx = 0;
+            dz = 1;
+            dl = 1;
+          }
+          m.kx = (dx / dl) * 0.42;
+          m.kz = (dz / dl) * 0.42;
+          m.vy = 0.26;
+          m.y += 0.02;
+          m.onGround = false;
+          updateHUD = true;
+          if (m.hp <= 0) {
+            mobSpawnPoof(m.x, m.y + mobHeight(m) * 0.5, m.z, mobScale(m));
+            var idx = mobs.indexOf(m);
+            if (idx !== -1) mobs.splice(idx, 1);
+            return true;
+          }
+          return false;
+        }
+
+        // ---- 視線上のモブを探す（レイ vs AABB） ----
+        function mobRayBox(
+          ox,
+          oy,
+          oz,
+          dx,
+          dy,
+          dz,
+          minX,
+          minY,
+          minZ,
+          maxX,
+          maxY,
+          maxZ
+        ) {
+          var t0 = 0,
+            t1 = MOB_ATTACK_REACH;
+          var o = [ox, oy, oz],
+            d = [dx, dy, dz];
+          var lo = [minX, minY, minZ],
+            hi = [maxX, maxY, maxZ];
+          for (var i = 0; i < 3; i++) {
+            if (Math.abs(d[i]) < 1e-8) {
+              if (o[i] < lo[i] || o[i] > hi[i]) return null;
+              continue;
+            }
+            var ta = (lo[i] - o[i]) / d[i];
+            var tb = (hi[i] - o[i]) / d[i];
+            if (ta > tb) {
+              var tmp = ta;
+              ta = tb;
+              tb = tmp;
+            }
+            if (ta > t0) t0 = ta;
+            if (tb < t1) t1 = tb;
+            if (t0 > t1) return null;
+          }
+          return t0;
+        }
+        function mobPick() {
+          if (!p || !mobs.length) return null;
+          var dx = p.direction.x,
+            dy = p.direction.y,
+            dz = p.direction.z;
+          var len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+          dx /= len;
+          dy /= len;
+          dz /= len;
+          var best = null,
+            bestT = MOB_ATTACK_REACH + 0.001;
+          for (var i = 0; i < mobs.length; i++) {
+            var m = mobs[i];
+            if (m.paused) continue;
+            var def = mobDef(m);
+            var sc = mobScale(m);
+            var hw = def.hitW * 0.5 * sc;
+            var h = def.hitH * sc;
+            var t = mobRayBox(
+              p.x,
+              p.y,
+              p.z,
+              dx,
+              dy,
+              dz,
+              m.x - hw,
+              m.y,
+              m.z - hw,
+              m.x + hw,
+              m.y + h,
+              m.z + hw
+            );
+            if (t === null) continue;
+            if (t < bestT) {
+              bestT = t;
+              best = m;
+            }
+          }
+          return best ? { mob: best, t: bestT } : null;
+        }
+        // 照準を更新（ブロックより手前にモブがいればブロックのアウトラインを消す）
+        function updateMobTarget() {
+          if (!hitBox) return;
+          if (typeof screen !== "undefined" && screen !== "play") {
+            hitBox.mob = null;
+            return;
+          }
+          var hit = mobPick();
+          hitBox.mob = hit ? hit.mob : null;
+          if (
+            hit &&
+            hit.t <= (hitBox.closest === undefined ? 1e9 : hitBox.closest)
+          ) {
+            hitBox.pos = null;
+          }
+        }
+        // 攻撃（左クリック）。命中したら true を返し、ブロック破壊を止める
+        function mobTryAttack() {
+          if (!p || !hitBox) return false;
+          if (typeof screen !== "undefined" && screen !== "play") return false;
+          var hit = mobPick();
+          if (!hit) return false;
+          if (hitBox.closest !== undefined && hit.t > hitBox.closest)
+            return false;
+          var dmg = gameMode === "creative" ? hit.mob.hp : 1;
+          hurtMob(hit.mob, dmg);
+          p.lastBreak = Date.now();
+          updateHUD = true;
+          return true;
+        }
+
+        function pickRandomMobType() {
+          return MOB_TYPES[Math.floor(Math.random() * MOB_TYPES.length)];
+        }
+        function mobColumnLoaded(x, z) {
+          if (!world || !world.chunks) return false;
+          var cx = Math.floor(x) >> 4,
+            cz = Math.floor(z) >> 4;
+          var col = world.chunks[cx];
+          if (!col) return false;
+          var ch = col[cz];
+          return !!(ch && ch.generated);
+        }
+
+        // ---- 自然発生：草ブロックの上、プレイヤーから少し離れた場所 ----
+        function mobTryNaturalSpawn(now) {
+          if (typeof screen !== "undefined" && screen !== "play") return;
+          if (now - mobLastSpawnAt < MOB_SPAWN_INTERVAL) return;
+          mobLastSpawnAt = now;
+          if (mobs.length >= MOB_MAX) return;
+          var near = 0;
+          var r2 = MOB_NEAR_RADIUS * MOB_NEAR_RADIUS;
+          for (var i = 0; i < mobs.length; i++) {
+            var mx = mobs[i].x - p.x,
+              mz = mobs[i].z - p.z;
+            if (mx * mx + mz * mz < r2) near++;
+          }
+          if (near >= MOB_NEAR_CAP) return;
+          for (var attempt = 0; attempt < 12; attempt++) {
+            var ang = Math.random() * MOB_TAU;
+            var dist =
+              MOB_SPAWN_MIN_DIST +
+              Math.random() * (MOB_SPAWN_MAX_DIST - MOB_SPAWN_MIN_DIST);
+            var fx = Math.floor(p.x + Math.cos(ang) * dist);
+            var fz = Math.floor(p.z + Math.sin(ang) * dist);
+            var sx = fx + 0.5,
+              sz = fz + 0.5;
+            if (!mobColumnLoaded(fx, fz)) continue;
+            var top = Math.floor(terrainHeight(fx, fz));
+            if (world.getBlock(fx, top, fz) !== blockIds.grass) continue;
+            if (world.getBlock(fx, top + 1, fz) !== 0) continue;
+            if (world.getBlock(fx, top + 2, fz) !== 0) continue;
+            spawnMob(
+              pickRandomMobType(),
+              sx,
+              top + 1,
+              sz,
+              Math.random() < MOB_BABY_CHANCE
+            );
+            return;
+          }
+        }
+
+        // ---- 遠くのモブを消去（エンティティ数の上限管理） ----
+        function mobCullFar(now) {
+          if (now - mobLastCullAt < 3000) return;
+          mobLastCullAt = now;
+          for (var i = mobs.length - 1; i >= 0; i--) {
+            var dx = mobs[i].x - p.x,
+              dz = mobs[i].z - p.z;
+            if (dx * dx + dz * dz > MOB_DESPAWN_DIST * MOB_DESPAWN_DIST)
+              mobs.splice(i, 1);
+          }
+        }
+
+        // ---- プレイヤーをモブの体から押し出す（マイクラ同様、モブは通り抜け不可） ----
+        function mobPushPlayer(m) {
+          var def = mobDef(m);
+          var sc = mobScale(m);
+          var hw = def.hitW * 0.5 * sc;
+          var h = def.hitH * sc;
+          var pw = p.w;
+          var dx = p.x - m.x,
+            dz = p.z - m.z;
+          var ox = hw + pw - Math.abs(dx);
+          var oz = hw + pw - Math.abs(dz);
+          if (ox <= 0 || oz <= 0) return;
+          var feet = p.y - p.bottomH,
+            head = p.y + p.topH;
+          if (head < m.y || feet > m.y + h) return;
+          if (ox < oz) p.x += (dx < 0 ? -1 : 1) * Math.min(ox, 0.08);
+          else p.z += (dz < 0 ? -1 : 1) * Math.min(oz, 0.08);
+        }
+
+        // ---- 更新（AI・物理・発生・成長） ----
+        function updateMobs() {
+          if (!p || !world) return;
+          var now = win.performance.now();
+          var paused = 0;
+          updateMobParticles();
+          for (var i = mobs.length - 1; i >= 0; i--) {
+            var m = mobs[i];
+            var def = mobDef(m);
+            if (!def) {
+              mobs.splice(i, 1);
+              continue;
+            }
+            if (mobShouldPause(m)) {
+              m.paused = true;
+              paused++;
+              continue;
+            }
+            if (m.paused || !m.lastActive) {
+              m.paused = false;
+              m.lastActive = now;
+            }
+            var dt = (now - m.lastActive) / 33;
+            if (!(dt > 0)) dt = 1;
+            if (dt > 2) dt = 2;
+            m.lastActive = now;
+            // チビの成長
+            if (m.baby && Date.now() - m.bornAt > MOB_BABY_GROW_MS)
+              m.baby = false;
+            if (now - m.hurtT < 450) updateHUD = true;
+            var hurt = now - m.hurtT < MOB_KNOCK_MS;
+
+            // ---- ノックバック ----
+            if (m.kx || m.kz) {
+              var kx = m.kx * dt,
+                kz = m.kz * dt;
+              if (!mobBlockedAt(m, m.x + kx, m.y, m.z)) m.x += kx;
+              else m.kx = 0;
+              if (!mobBlockedAt(m, m.x, m.y, m.z + kz)) m.z += kz;
+              else m.kz = 0;
+              var decay = Math.pow(0.82, dt);
+              m.kx *= decay;
+              m.kz *= decay;
+              if (Math.abs(m.kx) < 0.002) m.kx = 0;
+              if (Math.abs(m.kz) < 0.002) m.kz = 0;
+            }
+
+            // ---- 徘徊AI ----
+            if (!hurt) {
+              m.wanderTimer -= dt;
+              if (m.wanderTimer <= 0) {
+                m.wanderTimer = 60 + Math.random() * 180;
+                if (Math.random() < 0.35) m.moving = false;
+                else {
+                  m.moving = true;
+                  m.wanderAngle = Math.random() * MOB_TAU;
+                }
+              }
+              if (m.moving) {
+                var diff = m.wanderAngle - m.ry;
+                while (diff > Math.PI) diff -= MOB_TAU;
+                while (diff < -Math.PI) diff += MOB_TAU;
+                var maxTurn = def.turn * dt;
+                m.ry += Math.max(-maxTurn, Math.min(maxTurn, diff));
+              }
+            }
+
+            // ---- 重力・接地（m.yは必ず「足裏のY」） ----
+            var gy = mobGroundY(m.x, m.z, Math.floor(m.y) + 2);
+            if (gy === null) gy = m.y;
+            var maxFall = def.slowFall ? 0.3 : 1.5;
+            if (!m.onGround || m.y > gy + 0.001 || m.vy < 0) {
+              m.vy += MOB_GRAVITY * dt;
+              if (m.vy < -maxFall) m.vy = -maxFall;
+              m.y += m.vy * dt;
+              if (m.y <= gy) {
+                m.y = gy;
+                m.vy = 0;
+                m.onGround = true;
+              } else {
+                m.onGround = false;
+              }
+            } else {
+              m.y = gy;
+              m.vy = 0;
+              m.onGround = true;
+            }
+
+            // ---- モブの落下距離・落下ダメージ ----
+            if (!def.slowFall) {
+              if (!m.onGround) {
+                if (
+                  m.fallStartY === null ||
+                  m.fallStartY === undefined ||
+                  m.y > m.fallStartY
+                ) {
+                  m.fallStartY = m.y;
+                }
+              } else if (m.fallStartY !== null && m.fallStartY !== undefined) {
+                var mobFallDist = m.fallStartY - m.y;
+                if (mobFallDist >= 3) {
+                  var mobFallDamage = Math.floor(mobFallDist - 3) + 1;
+                  m.hp -= mobFallDamage;
+                  m.hurtT = now;
+                  updateHUD = true;
+                  if (m.hp <= 0) {
+                    mobSpawnPoof(
+                      m.x,
+                      m.y + mobHeight(m) * 0.5,
+                      m.z,
+                      mobScale(m)
+                    );
+                    mobs.splice(i, 1);
+                    continue;
+                  }
+                }
+                m.fallStartY = null;
+              }
+            } else {
+              m.fallStartY = null;
+            }
+
+            // ---- 水平移動（壁・段差。1マス段差は実際にジャンプする） ----
+            var moved = false;
+            if (m.moving && !hurt) {
+              var dirX = -Math.sin(m.ry),
+                dirZ = Math.cos(m.ry);
+              var step = def.speed * (m.baby ? 1.4 : 1) * dt;
+              var nx = m.x + dirX * step,
+                nz = m.z + dirZ * step;
+
+              // 現在の移動先を確認
+              var nextGround = mobGroundY(nx, nz, Math.floor(m.y) + 3);
+              var rise = nextGround === null ? 99 : nextGround - m.y;
+              var canMove = nextGround !== null && rise <= 1.001;
+
+              // 少し先も確認して、段差を早めに発見する
+              var probeDist = 1;
+              var probeX = m.x + dirX * probeDist;
+              var probeZ = m.z + dirZ * probeDist;
+              var probeGround = mobGroundY(probeX, probeZ, Math.floor(m.y) + 3);
+
+              if (probeGround !== null) {
+                var probeRise = probeGround - m.y;
+                // 1マス以内の段差ならジャンプを優先
+                if (m.onGround && probeRise > 0.05 && probeRise <= 1.001) {
+                  var jumpTestY = probeGround;
+
+                  if (!mobBlockedAt(m, nx, jumpTestY, nz)) {
+                    m.vy = 0.42;
+                    m.onGround = false;
+
+                    // ジャンプ開始時も前進する
+                    m.x = nx;
+                    m.z = nz;
+                    moved = true;
+                  }
+                }
+
+                // まだジャンプしていない場合は通常移動
+                if (!moved) {
+                  var testY = m.y;
+
+                  if (canMove && !mobBlockedAt(m, nx, nextGround, nz)) {
+                    m.x = nx;
+                    m.z = nz;
+                    moved = true;
+                  } else {
+                    // 進めない場合だけ方向を変える
+                    // 1マス段差を検出している場合は方向を変えない
+                    if (!(probeRise > 0.05 && probeRise <= 1.001)) {
+                      m.wanderAngle = Math.random() * MOB_TAU;
+                      m.wanderTimer = 40 + Math.random() * 80;
+                    }
+                  }
+                } else {
+                  //出している場合は方向を変えない
+                  if (!(rise > 0.05 && rise <= 1.001)) {
+                    m.wanderAngle = Math.random() * MOB_TAU;
+                    m.wanderTimer = 40 + Math.random() * 80;
+                  }
+                }
+              }
+            }
+
+            if (moved) m.phase += def.walkRate * (m.baby ? 1.3 : 1) * dt;
+
+            var target = moved ? 1 : 0;
+            m.walkAmt += (target - m.walkAmt) * Math.min(1, 0.2 * dt);
+            if (m.walkAmt < 0.01) m.walkAmt = 0;
+
+            // プレイヤーとの押し合い
+            var pdx = m.x - p.x,
+              pdz = m.z - p.z;
+            if (pdx * pdx + pdz * pdz < 4) mobPushPlayer(m);
+          }
+          mobsPausedCount = paused;
+          updateMobParticles();
+          // 自然発生は無効。モブはスポーンエッグからのみ出現する。
+          mobCullFar(now);
+        }
+
+        // ---- 描画 ----
+        function mobRotZ(mat, a) {
+          var c = Math.cos(a),
+            s = Math.sin(a);
+          var t = mat[0];
+          mat[0] = t * c + mat[1] * s;
+          mat[1] = t * -s + mat[1] * c;
+          t = mat[4];
+          mat[4] = t * c + mat[5] * s;
+          mat[5] = t * -s + mat[5] * c;
+          t = mat[8];
+          mat[8] = t * c + mat[9] * s;
+          mat[9] = t * -s + mat[9] * c;
+          t = mat[12];
+          mat[12] = t * c + mat[13] * s;
+          mat[13] = t * -s + mat[13] * c;
+        }
+        // 面ごとの明暗をつけて立方体を描く
+        function mobBoxDraw(texKeys) {
+          if (!texKeys || !gl || !programObject3D) return;
+          for (var s = 0; s < 6; s++) {
+            var sideName = MOB_SIDE_NAMES[s];
+            var sideIdx = Sides[sideName];
+            if (!(0xff & Block[sideName])) continue;
+            var texKey = texKeys[sideIdx] || "mobPigSkin";
+            var texIndex = textureMap[texKey];
+            if (texIndex === undefined || !texCoordsBuffers[texIndex]) {
+              texIndex = textureMap["mobPigSkin"];
+            }
+            if (
+              texIndex === undefined ||
+              !texCoordsBuffers[texIndex] ||
+              !sideEdgeBuffers[sideIdx]
+            )
+              continue;
+            vertexAttribPointer(
+              "aVertex",
+              programObject3D,
+              "aVertex",
+              3,
+              sideEdgeBuffers[sideIdx]
+            );
+            vertexAttribPointer(
+              "aTexture",
+              programObject3D,
+              "aTexture",
+              2,
+              texCoordsBuffers[texIndex]
+            );
+            if (
+              glCache.locations.aShadow !== undefined &&
+              glCache.locations.aShadow !== -1
+            ) {
+              gl.vertexAttrib1f(
+                glCache.locations.aShadow,
+                MOB_FACE_SHADE[sideIdx]
+              );
+            }
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+          }
+        }
+        function mobDrawPart(m, def, pa, swing, bob, scale, drawYOffset) {
+          if (
+            !pa ||
+            !def ||
+            !Number.isFinite(m.x) ||
+            !Number.isFinite(m.y) ||
+            !Number.isFinite(m.z) ||
+            !Number.isFinite(scale) ||
+            !Number.isFinite(pa[0]) ||
+            !Number.isFinite(pa[1]) ||
+            !Number.isFinite(pa[2]) ||
+            !Number.isFinite(pa[3]) ||
+            !Number.isFinite(pa[4]) ||
+            !Number.isFinite(pa[5])
+          )
+            return;
+          copyArr(cameraModelView, modelView);
+          trans(modelView, m.x, m.y, m.z);
+          rotY(modelView, -m.ry);
+          var modelScXz = (def.modelScale || 1) * scale;
+          var modelScY = (def.modelYScale || def.modelScale || 1) * scale;
+          trans(
+            modelView,
+            pa[0] * modelScXz,
+            pa[1] * (def.modelYScale || def.modelScale || 1) +
+              (def.modelYOffset || 0) +
+              (drawYOffset || 0),
+            pa[2] * modelScXz
+          );
+          var kind = pa[7];
+          var pivot = 0;
+          if (kind === "leg") {
+            pivot = (pa[4] * modelScY) / 2;
+            trans(modelView, 0, pivot, 0);
+            rotX(modelView, swing + pa[8]);
+            trans(modelView, 0, -pivot, 0);
+          } else if (kind === "body" && pa[8]) {
+            // 元モデルの寸法をそのまま使うため、胴体を90度回転させない。
+          } else if (kind === "head") {
+            pivot = (-pa[4] * modelScY) / 2;
+            trans(modelView, 0, pivot, 0);
+            rotX(modelView, bob);
+            trans(modelView, 0, -pivot, 0);
+          } else if (kind === "wing") {
+            pivot = (pa[4] * modelScY) / 2;
+            trans(modelView, 0, pivot, 0);
+            mobRotZ(modelView, m.wingAng * (pa[8] || 1));
+            trans(modelView, 0, -pivot, 0);
+          } else if (kind === "tail") {
+            pivot = (pa[4] * modelScY) / 2;
+            trans(modelView, 0, pivot, 0);
+            rotX(modelView, pa[8] || 0);
+            trans(modelView, 0, -pivot, 0);
+          }
+          var ws = pa[3] * modelScXz,
+            hs = pa[4] * modelScY,
+            ds = pa[5] * modelScXz;
+          modelView[0] *= ws;
+          modelView[1] *= ws;
+          modelView[2] *= ws;
+          modelView[4] *= hs;
+          modelView[5] *= hs;
+          modelView[6] *= hs;
+          modelView[8] *= ds;
+          modelView[9] *= ds;
+          modelView[10] *= ds;
+          matMult();
+          transpose(matrix);
+          uniformMatrix("view3d", programObject3D, "uView", false, matrix);
+          mobBoxDraw(pa[6]);
+        }
+        function renderMobs() {
+          if (!p || !world || !gl) return;
+          var oldBlockFill = blockFill;
+          var oldBlockOutlines = blockOutlines;
+          var shadowLoc = glCache.locations.aShadow;
+          var uColorLoc = glCache.locations.uColor;
+          var now = win.performance.now();
+          var maxD = mobVisibleDistance();
+          try {
+            updateMobTarget();
+            blockFill = true;
+            blockOutlines = false;
+            if (shadowLoc !== undefined && shadowLoc !== -1) {
+              gl.disableVertexAttribArray(shadowLoc);
+              gl.vertexAttrib1f(shadowLoc, 1.0);
+            }
+            for (var i = 0; i < mobs.length; i++) {
+              var m = mobs[i];
+              if (!m || m.paused) continue;
+              var def = mobDef(m);
+              if (!def) continue;
+              var dx = m.x - p.x,
+                dz = m.z - p.z;
+              if (
+                !Number.isFinite(dx) ||
+                !Number.isFinite(dz) ||
+                dx * dx + dz * dz > maxD * maxD
+              )
+                continue;
+              var hurt = now - m.hurtT < MOB_HURT_FLASH_MS;
+              if (hurt && uColorLoc !== undefined && uColorLoc !== null)
+                gl.uniform4f(uColorLoc, 1.7, 0.42, 0.42, 1);
+              var swing = 0;
+              var bob = 0;
+
+              if (m.type === "pig") {
+                // 豚：左右の足を交互に大きく動かす
+                swing = Math.sin(m.phase) * 0.34 * m.walkAmt;
+                bob = Math.abs(Math.sin(m.phase * 2)) * 0.025 * m.walkAmt;
+              } else if (m.type === "sheep") {
+                // 羊：ゆっくりした歩き＋頭を少し上下
+                swing = Math.sin(m.phase * 0.85) * 0.28 * m.walkAmt;
+                bob = Math.sin(m.phase * 1.7) * 0.045 * m.walkAmt;
+              } else if (m.type === "cat") {
+                // 猫：速めの足運び＋体を軽く上下
+                swing = Math.sin(m.phase * 1.35) * 0.24 * m.walkAmt;
+                bob = Math.sin(m.phase * 2.7) * 0.055 * m.walkAmt;
+              } else if (m.type === "villager") {
+                // 村人：足は小さめ、頭はほぼ固定
+                swing = Math.sin(m.phase * 0.75) * 0.12 * m.walkAmt;
+                bob = Math.sin(m.phase * 1.5) * 0.018 * m.walkAmt;
+              } else if (m.type === "axolotl") {
+                // ウーパールーパー：ゆっくりした動き
+                swing = Math.sin(m.phase * 0.65) * 0.16 * m.walkAmt;
+                bob = Math.sin(m.phase * 1.3) * 0.08 * m.walkAmt;
+              } else if (m.type === "chicken") {
+                // ニワトリ：細かく速い足運び＋首の上下
+                swing = Math.sin(m.phase * 1.7) * 0.38 * m.walkAmt;
+                bob = Math.sin(m.phase * 3.4) * 0.07 * m.walkAmt;
+              } else if (m.type === "cow") {
+                // 牛：大きくゆっくり歩く
+                swing = Math.sin(m.phase * 0.7) * 0.3 * m.walkAmt;
+                bob = Math.sin(m.phase * 1.4) * 0.035 * m.walkAmt;
+              } else {
+                // その他のモブ
+                swing = Math.sin(m.phase) * def.legAmp * m.walkAmt;
+                bob = def.headBob * m.walkAmt;
+              }
+              m.wingAng =
+                def.slowFall && !m.onGround ? Math.sin(now * 0.018) * 0.75 : 0;
+              var bodyScale = mobScale(m);
+              var headScale = m.baby ? bodyScale * 1.3 : bodyScale;
+              var drawYOffset = 0;
+
+              if (m.type === "pig") drawYOffset = -0.5;
+              else if (m.type === "sheep") drawYOffset = -0.5;
+              else if (m.type === "cat") drawYOffset = -0.5;
+              else if (m.type === "villager") drawYOffset = -0.5;
+              else if (m.type === "axolotl") drawYOffset = -0.5;
+              else if (m.type === "chicken") drawYOffset = -0.5;
+              else if (m.type === "cow") drawYOffset = -0.5;
+
+              for (var pi = 0; pi < def.parts.length; pi++) {
+                var pa = def.parts[pi];
+                var sc =
+                  pa[7] === "head" || pa[7] === "wing" ? headScale : bodyScale;
+                mobDrawPart(m, def, pa, swing, bob, sc, drawYOffset);
+              }
+              if (hurt && uColorLoc !== undefined && uColorLoc !== null)
+                gl.uniform4f(uColorLoc, 1, 1, 1, 1);
+            }
+            if (mobParticles.length) {
+              for (var q = 0; q < mobParticles.length; q++) {
+                var pt = mobParticles[q];
+                if (
+                  !pt ||
+                  !Number.isFinite(pt.x) ||
+                  !Number.isFinite(pt.y) ||
+                  !Number.isFinite(pt.z)
+                )
+                  continue;
+                if (uColorLoc !== undefined && uColorLoc !== null)
+                  gl.uniform4f(
+                    uColorLoc,
+                    1,
+                    1,
+                    1,
+                    Math.max(0, Math.min(1, pt.life))
+                  );
+                copyArr(cameraModelView, modelView);
+                trans(modelView, pt.x, pt.y, pt.z);
+                var ps = Number.isFinite(pt.size) ? pt.size : 0.1;
+                modelView[0] *= ps;
+                modelView[1] *= ps;
+                modelView[2] *= ps;
+                modelView[4] *= ps;
+                modelView[5] *= ps;
+                modelView[6] *= ps;
+                modelView[8] *= ps;
+                modelView[9] *= ps;
+                modelView[10] *= ps;
+                matMult();
+                transpose(matrix);
+                uniformMatrix(
+                  "view3d",
+                  programObject3D,
+                  "uView",
+                  false,
+                  matrix
+                );
+                mobBoxDraw([
+                  "mobPoof",
+                  "mobPoof",
+                  "mobPoof",
+                  "mobPoof",
+                  "mobPoof",
+                  "mobPoof",
+                ]);
+              }
+            }
+          } catch (mobRenderError) {
+            console.warn("Mob render error recovered:", mobRenderError);
+          } finally {
+            if (uColorLoc !== undefined && uColorLoc !== null)
+              gl.uniform4f(uColorLoc, 1, 1, 1, 1);
+            if (shadowLoc !== undefined && shadowLoc !== -1) {
+              gl.enableVertexAttribArray(shadowLoc);
+              gl.vertexAttrib1f(shadowLoc, 1.0);
+            }
+            blockFill = oldBlockFill;
+            blockOutlines = oldBlockOutlines;
+          }
+        }
+
+        // ゲーム開始時のスポーンエッグ自動配布はしない。
+        function ensureStarterSpawnEggs() {
+          starterEggsGiven = true;
+        }
+
+        function loadMobsFromSave(savedMobs) {
+          if (!Array.isArray(savedMobs)) return;
+          for (var i = 0; i < savedMobs.length && i < MOB_MAX; i++) {
+            var sm = savedMobs[i];
+            if (!sm || MOB_TYPES.indexOf(sm.t) === -1 || !MOB_DEFS[sm.t])
+              continue;
+            if (
+              typeof sm.x !== "number" ||
+              typeof sm.y !== "number" ||
+              typeof sm.z !== "number"
+            )
+              continue;
+            var mm = spawnMob(sm.t, sm.x, sm.y, sm.z, !!sm.b);
+            if (!mm) continue;
+            if (typeof sm.ry === "number") mm.ry = sm.ry;
+            if (typeof sm.hp === "number")
+              mm.hp = Math.max(1, Math.min(mm.maxHp, sm.hp));
+            if (typeof sm.age === "number") mm.bornAt = Date.now() - sm.age;
+          }
+        }
+
+        function tryBreakBlock() {
+          if (!hitBox.pos || Key.control) {
+            breakState.key = "";
+            updateHUD = true;
+            return;
+          }
+          var id = world.getBlock(hitBox.pos[0], hitBox.pos[1], hitBox.pos[2]);
+          if (!id || id === 4) {
+            breakState.key = "";
+            updateHUD = true;
+            return;
+          }
+          var key = hitBox.pos[0] + "," + hitBox.pos[1] + "," + hitBox.pos[2];
+          if (breakState.key !== key) {
+            breakState.key = key;
+            breakState.start = Date.now();
+          }
+          if (
+            gameMode === "creative" ||
+            Date.now() - breakState.start >= blockBreakDuration(id) * 1000
+          ) {
+            if (gameMode === "survival")
+              spawnDroppedItem(id, hitBox.pos[0], hitBox.pos[1], hitBox.pos[2]);
+            changeWorldBlock(0);
+            breakState.key = "";
+          }
+          updateHUD = true;
+        }
+        function survivalTick() {
+          if (gameMode !== "survival") return;
+          var now = Date.now();
+          if (!p.nextHungerTick) p.nextHungerTick = now + 30000;
+          if (now >= p.nextHungerTick) {
+            p.hunger = Math.max(0, p.hunger - 1);
+            p.nextHungerTick = now + 30000;
+            updateHUD = true;
+          }
+          if (p.hunger <= 0 && (!p.nextDamageTick || now >= p.nextDamageTick)) {
+            p.health = Math.max(0, p.health - 1);
+            p.nextDamageTick = now + 2000;
+            updateHUD = true;
+          }
+          // 満腹ゲージが満タン（18以上）のとき、少しずつHPを回復する
+          if (p.hunger >= 18 && p.health < 20 && p.health > 0) {
+            if (!p.nextRegenTick || now >= p.nextRegenTick) {
+              p.health = Math.min(20, p.health + 1);
+              p.nextRegenTick = now + 3000;
+              updateHUD = true;
+            }
+          }
+          if (p.health <= 0) {
+            p.x = 8;
+            p.y = terrainHeight(8, 8) + 3;
+            p.z = 8;
+            p.health = 20;
+            p.hunger = 20;
+          }
+        }
+        function play() {} //Globals
+        function play() {
+          if (typeof returnCraftingItems === "function") {
+            returnCraftingItems();
+          }
+          if (
+            typeof returnItemToInv === "function" &&
+            inventory &&
+            inventory.holding
+          ) {
+            var leftHold = returnItemToInv(
+              inventory.holding,
+              inventory.holdingCount || 1
+            );
+            if (leftHold > 0) {
+              inventory.holdingCount = leftHold;
+            } else {
+              inventory.holding = 0;
+              inventory.holdingCount = 0;
+            }
+          }
+          screen = "play";
+          invView = "main";
+          getPointer();
+          if (typeof updateMobileControls === "function") {
+            updateMobileControls();
+          }
+          fill(255, 255, 255);
+          textSize(10);
+          p.lastBreak = Date.now();
+          p.lastPlace = Date.now();
+          updateHUD = true;
+          gl.clearColor(84 / 255, 138 / 255, 184 / 255, 1.0);
+        }
+        var gl;
+
+        function getPointer() {
+          if (canvas && canvas.requestPointerLock) {
+            try {
+              var res = canvas.requestPointerLock();
+              if (res && typeof res.catch === "function") {
+                res.catch(function () {});
+              }
+            } catch (e) {}
+          }
+        }
+
+        function releasePointer() {
+          if (doc && doc.exitPointerLock) {
+            try {
+              var res = doc.exitPointerLock();
+              if (res && typeof res.catch === "function") {
+                res.catch(function () {});
+              }
+            } catch (e) {}
+          }
+        }
+        var Block = {
+          top: 0x4,
+          bottom: 0x8,
+          north: 0x20,
+          south: 0x10,
+          east: 0x2,
+          west: 0x1,
+        };
+        var Sides = {
+          top: 0,
+          bottom: 1,
+          north: 2,
+          south: 3,
+          east: 4,
+          west: 5,
+        };
+        //GLSL Shader code
+        {
+          var vertexShaderSrc3D =
+            "" +
+            "varying float vShadow;" +
+            "attribute vec3 aVertex;" +
+            "attribute vec2 aTexture;" +
+            "attribute float aShadow;" +
+            "varying   vec2 vTexture;" +
+            "uniform vec4 uColor;" +
+            "uniform mat4 uView;" +
+            "uniform mat4 uProjection;" +
+            "uniform bool uEdge;" +
+            "void main(void) {" +
+            "  vTexture = aTexture;" +
+            "  vShadow = aShadow > 0.0 ? aShadow : 1.0;" +
+            "  gl_Position = uView * vec4( aVertex, 1.0 );" +
+            //"  vShadow = 1.0;"+// - gl_Position.z / 10000.0;" +
+            "}";
+          var fragmentShaderSrc3D =
+            "" +
+            "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" +
+            "  precision highp float;\n" +
+            "#else\n" +
+            "  precision mediump float;\n" +
+            "#endif\n" +
+            "varying float vShadow;" +
+            "uniform sampler2D uSampler;" +
+            "uniform vec4 uColor;" +
+            "varying vec2 vTexture;" +
+            "void main(void){" +
+            "  vec4 color = texture2D(uSampler, vTexture);" +
+            "  gl_FragColor = vec4(color.rgb * vShadow * uColor.rgb, color.a * uColor.a);" +
+            "  if (gl_FragColor.a == 0.0) discard;" +
+            "}";
+        }
+        var createProgramObject = function (
+          curContext,
+          vetexShaderSource,
+          fragmentShaderSource
+        ) {
+          var vertexShaderObject = curContext.createShader(
+            curContext.VERTEX_SHADER
+          );
+          curContext.shaderSource(vertexShaderObject, vetexShaderSource);
+          curContext.compileShader(vertexShaderObject);
+          if (
+            !curContext.getShaderParameter(
+              vertexShaderObject,
+              curContext.COMPILE_STATUS
+            )
+          ) {
+            throw curContext.getShaderInfoLog(vertexShaderObject);
+          }
+          var fragmentShaderObject = curContext.createShader(
+            curContext.FRAGMENT_SHADER
+          );
+          curContext.shaderSource(fragmentShaderObject, fragmentShaderSource);
+          curContext.compileShader(fragmentShaderObject);
+          if (
+            !curContext.getShaderParameter(
+              fragmentShaderObject,
+              curContext.COMPILE_STATUS
+            )
+          ) {
+            throw curContext.getShaderInfoLog(fragmentShaderObject);
+          }
+          var programObject = curContext.createProgram();
+          curContext.attachShader(programObject, vertexShaderObject);
+          curContext.attachShader(programObject, fragmentShaderObject);
+          curContext.linkProgram(programObject);
+          if (
+            !curContext.getProgramParameter(
+              programObject,
+              curContext.LINK_STATUS
+            )
+          ) {
+            throw "Error linking shaders.";
+          }
+          return programObject;
+        };
+        var programObject3D;
+        /*
+      var boxVerts = newFloat32Array([
+          0.5,  0.5, -0.5,  0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,  0.5, -0.5,  0.5,  0.5, -0.5,//South
+          0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5,  0.5,  0.5,//North
+          0.5,  0.5, -0.5,  0.5,  0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5,//East
+          0.5, -0.5, -0.5,  0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5, -0.5,  0.5, -0.5, -0.5,//Bottom
+         -0.5, -0.5, -0.5, -0.5, -0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5, -0.5, -0.5, -0.5, -0.5,//West
+          0.5,  0.5,  0.5,  0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5,  0.5,  0.5,  0.5,  0.5 //Top
+      ]);
+       var sideFaceVerts = { //Must use GL_TRIANGLES for these
+          south:  newFloat32Array([0.5,  0.5, -0.5,  0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,  0.5, -0.5,  0.5,  0.5, -0.5]),
+          north:  newFloat32Array([0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5,  0.5,  0.5]),
+          east:   newFloat32Array([0.5,  0.5, -0.5,  0.5,  0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5, -0.5,  0.5,  0.5, -0.5]),
+          top: newFloat32Array([0.5, -0.5, -0.5,  0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5, -0.5,  0.5, -0.5, -0.5]),
+          west:  newFloat32Array([-0.5, -0.5, -0.5, -0.5, -0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5,  0.5, -0.5,  0.5, -0.5, -0.5, -0.5, -0.5]),
+          bottom:    newFloat32Array([0.5,  0.5,  0.5,  0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5, -0.5, -0.5,  0.5,  0.5,  0.5,  0.5,  0.5])
+      };*/
+        var sideEdgeVerts = [
+          newFloat32Array([
+            -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+          ]), //top
+          newFloat32Array([
+            -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
+          ]), //bottom
+          newFloat32Array([
+            0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5,
+          ]), //north
+          newFloat32Array([
+            -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5,
+          ]), //south
+          newFloat32Array([
+            0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5,
+          ]), //east
+          newFloat32Array([
+            -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5,
+          ]), //west
+        ];
+        var indexOrder;
+        (function () {
+          var arr = [];
+          for (var i = 0; i < 20000; i++) {
+            arr.push(
+              0 + i * 4,
+              1 + i * 4,
+              2 + i * 4,
+              0 + i * 4,
+              2 + i * 4,
+              3 + i * 4
+            );
+          }
+          indexOrder = newUint32Array(arr);
+        })();
+        var boxOutlineVerts = newFloat32Array([
+          0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5,
+          0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5,
+          0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+          -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5,
+          0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,
+          -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5,
+        ]);
+        var boxVerts = [
+          [
+            0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+            -0.5, -0.5, -0.5, 0.5, -0.5, -0.5,
+          ], //top
+          [
+            0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+          ], //bottom
+          [
+            0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+            0.5, -0.5, 0.5, 0.5, 0.5, 0.5,
+          ], //north
+          [
+            0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, -0.5,
+          ], //south
+          [
+            0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+            -0.5, -0.5, 0.5, 0.5, -0.5,
+          ], //east
+          [
+            -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+            -0.5, 0.5, -0.5, -0.5, -0.5, -0.5,
+          ], //west
+        ];
+        var hexagonVerts;
+        var blockIcons;
+        var blockIconCounts;
+        (function () {
+          var side = Math.sqrt(3) / 2;
+          hexagonVerts = newFloat32Array([
+            0,
+            1,
+            1,
+            side,
+            0.5,
+            1,
+            0,
+            0,
+            1,
+            -side,
+            0.5,
+            1,
+            0,
+            0,
+            1,
+            side,
+            0.5,
+            1,
+            side,
+            -0.5,
+            1,
+            0,
+            -1,
+            1,
+            -side,
+            0.5,
+            1,
+            0,
+            0,
+            1,
+            0,
+            -1,
+            1,
+            -side,
+            -0.5,
+            1,
+          ]);
+        })();
+
+        function genIcons() {
+          blockIcons = [null];
+          blockIconCounts = [0];
+          var texOrder = [1, 2, 2];
+          var shadows = [1, 0.4, 0.7];
+          var scale = (0.16 / height) * inventory.size;
+          for (var i = 1; i < blockData.length; i++) {
+            var data = [];
+            var block = blockData[i];
+            var iconShape = customIds[i] ? customIds[i].type : null;
+            var isEggIcon = block.name.indexOf("spawnEgg") === 0;
+            if (iconShape === "stairs") {
+              // Minecraft風の3D階段アイコン。下段と上段を別の立方体として描画。
+              var stairTex =
+                typeof block.textures === "string"
+                  ? block.textures
+                  : block.textures && block.textures.length
+                  ? block.textures[0]
+                  : block.name;
+              // 他のブロックと同じ等角投影で描き、大きさ・形を通常ブロックに揃える
+              var sSide = Math.sqrt(3) / 2;
+              var stairQuads = [
+                // =========================================
+                // ① 上段の上面
+                // =========================================
+                [
+                  [-0.5, 0.5, -0.5],
+                  [0.5, 0.5, -0.5],
+                  [0.5, 0.5, 0.0],
+                  [-0.5, 0.5, 0.0],
+                  1.0,
+                ],
+
+                // =========================================
+                // ② 下段の上面
+                // =========================================
+                [
+                  [-0.5, 0.0, 0.0],
+                  [0.5, 0.0, 0.0],
+                  [0.5, 0.0, 0.5],
+                  [-0.5, 0.0, 0.5],
+                  1.0,
+                ],
+
+                // =========================================
+                // ③ 段差の立ち上がり
+                // =========================================
+                [
+                  [-0.5, 0.0, 0.0],
+                  [-0.5, 0.5, 0.0],
+                  [0.5, 0.5, 0.0],
+                  [0.5, 0.0, 0.0],
+                  0.7,
+                ],
+
+                // =========================================
+                // ④ 手前の面
+                // =========================================
+                [
+                  [-0.5, -0.5, 0.5],
+                  [-0.5, 0.0, 0.5],
+                  [0.5, 0.0, 0.5],
+                  [0.5, -0.5, 0.5],
+                  0.7,
+                ],
+
+                // =========================================
+                // ⑤ 右側面・上段
+                // =========================================
+                [
+                  [0.5, 0.0, -0.5],
+                  [0.5, 0.5, -0.5],
+                  [0.5, 0.5, 0.0],
+                  [0.5, 0.0, 0.0],
+                  0.4,
+                ],
+
+                // =========================================
+                // ⑥ 右側面・下段
+                // =========================================
+                [
+                  [0.5, -0.5, -0.5],
+                  [0.5, 0.0, -0.5],
+                  [0.5, 0.0, 0.5],
+                  [0.5, -0.5, 0.5],
+                  0.4,
+                ],
+
+                // =========================================
+                // ⑦ 左側面・上段
+                // =========================================
+                [
+                  [-0.5, 0.5, 0.0],
+                  [-0.5, 0.0, 0.0],
+                  [-0.5, 0.0, -0.5],
+                  [-0.5, 0.5, -0.5],
+                  0.7,
+                ],
+
+                // =========================================
+                // ⑧ 左側面・下段
+                // =========================================
+                [
+                  [-0.5, 0.0, 0.5],
+                  [-0.5, -0.5, 0.5],
+                  [-0.5, -0.5, -0.5],
+                  [-0.5, 0.0, -0.5],
+                  0.7,
+                ],
+
+                // =========================================
+                // ⑨ 奥の面
+                // =========================================
+                [
+                  [-0.5, -0.5, -0.5],
+                  [-0.5, 0.5, -0.5],
+                  [0.5, 0.5, -0.5],
+                  [0.5, -0.5, -0.5],
+                  0.55,
+                ],
+
+                // =========================================
+                // ⑩ 底面
+                // 透明な穴が見える場合に備えて追加
+                // =========================================
+                [
+                  [-0.5, -0.5, 0.5],
+                  [-0.5, -0.5, -0.5],
+                  [0.5, -0.5, -0.5],
+                  [0.5, -0.5, 0.5],
+                  0.45,
+                ],
+              ];
+              var sTexVerts = textureCoords[textureMap[stairTex]];
+              for (var sq = 0; sq < stairQuads.length; sq++) {
+                for (var sv = 0; sv < 4; sv++) {
+                  var svx = stairQuads[sq][sv][0];
+                  var svy = stairQuads[sq][sv][1];
+                  var svz = stairQuads[sq][sv][2];
+                  data.push((svx - svz) * sSide * scale);
+                  data.push((svy - (svx + svz) * 0.5) * scale);
+                  data.push(0.1666666);
+                  data.push(sTexVerts[sv * 2]);
+                  data.push(sTexVerts[sv * 2 + 1]);
+                  data.push(stairQuads[sq][4]);
+                }
+              }
+              var stairBuffer = gl.createBuffer();
+              gl.bindBuffer(gl.ARRAY_BUFFER, stairBuffer);
+              gl.bufferData(
+                gl.ARRAY_BUFFER,
+                newFloat32Array(data),
+                gl.STATIC_DRAW
+              );
+              blockIcons.push(stairBuffer);
+              blockIconCounts.push(60);
+              continue;
+            }
+
+            for (var j = 0; j < 12; j++) {
+              var hx = hexagonVerts[j * 3 + 0];
+              var hy = hexagonVerts[j * 3 + 1];
+              if (iconShape === "slab") {
+                if (j < 4 || hy > 0) hy -= 0.5;
+              } else if (iconShape === "door") {
+                var dj = j % 4;
+                if (j < 4) {
+                  hx = dj === 0 || dj === 3 ? -0.5 : 0.5;
+                  hy = dj === 0 || dj === 1 ? 0.95 : 0.85;
+                } else if (j < 8) {
+                  hx = dj === 0 || dj === 3 ? -0.55 : 0.55;
+                  hy = dj === 0 || dj === 1 ? 0.9 : -0.9;
+                } else {
+                  hx = dj === 0 || dj === 3 ? -0.45 : 0.65;
+                  hy = dj === 0 || dj === 1 ? 0.9 : -0.9;
+                }
+              }
+              if (isEggIcon) {
+                // スポーンエッグは通常ブロックより小さい卵型アイコンで表示する
+                hx *= 0.6;
+                hy = hy * 0.6 + 0.03;
+              }
+              data.push(hx * scale);
+              data.push(hy * scale);
+              data.push(0.1666666);
+              var faceIdx = Math.floor(j / 4);
+              var texKey;
+              if (i === 76) {
+                // 作業台ホットバー/インベントリ用
+                // 上面 = craftingTableTop
+                // 側面 = craftingTableSide
+
+                if (faceIdx === 0) {
+                  texKey = "craftingTableTop";
+                } else {
+                  texKey = "craftingTableSide";
+                }
+              } else if (i === 1) {
+                // 草ブロックのホットバー/インベントリアイコンを固定
+                // 上面 = grassTop / 下面 = dirt / 側面 = grassSide
+                if (faceIdx === 0) {
+                  texKey = "grassTop";
+                } else if (faceIdx === 1) {
+                  texKey = "dirt";
+                } else {
+                  texKey = "grassSide";
+                }
+              } else if (customIds[i] && customIds[i].type === "door") {
+                texKey = customIds[i].doorTexLower;
+              } else {
+                texKey =
+                  block.textures && block.textures.length >= 6
+                    ? faceIdx === 0
+                      ? block.textures[0]
+                      : faceIdx === 1
+                      ? block.textures[2]
+                      : block.textures[3]
+                    : block.textures[texOrder[faceIdx]];
+              }
+              data.push(textureCoords[textureMap[texKey]][(j * 2 + 0) % 8]);
+              data.push(textureCoords[textureMap[texKey]][(j * 2 + 1) % 8]);
+              data.push(shadows[faceIdx]);
+            }
+            var buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(
+              gl.ARRAY_BUFFER,
+              newFloat32Array(data),
+              gl.STATIC_DRAW
+            );
+            blockIcons.push(buffer);
+            blockIconCounts.push(18);
+          }
+        }
+
+        function uniformf(cacheId, programObj, vrName, vrValue) {
+          var vrLocation = glCache.locations[cacheId];
+          if (vrLocation === undefined) {
+            vrLocation = gl.getUniformLocation(programObj, vrName);
+            glCache.locations[cacheId] = vrLocation;
+          }
+          // the variable won't be found if it was optimized out.
+          if (vrLocation !== null) {
+            if (vrValue.length === 4) {
+              gl.uniform4fv(vrLocation, vrValue);
+            } else if (vrValue.length === 3) {
+              gl.uniform3fv(vrLocation, vrValue);
+            } else if (vrValue.length === 2) {
+              gl.uniform2fv(vrLocation, vrValue);
+            } else {
+              gl.uniform1f(vrLocation, vrValue);
+            }
+          }
+        }
+
+        function uniformi(cacheId, programObj, vrName, vrValue) {
+          var vrLocation = glCache.locations[cacheId];
+          if (vrLocation === undefined) {
+            vrLocation = gl.getUniformLocation(programObj, vrName);
+            glCache.locations[cacheId] = vrLocation;
+          }
+          // the variable won't be found if it was optimized out.
+          if (vrLocation !== null) {
+            if (vrValue.length === 4) {
+              gl.uniform4iv(vrLocation, vrValue);
+            } else if (vrValue.length === 3) {
+              gl.uniform3iv(vrLocation, vrValue);
+            } else if (vrValue.length === 2) {
+              gl.uniform2iv(vrLocation, vrValue);
+            } else {
+              gl.uniform1i(vrLocation, vrValue);
+            }
+          }
+        }
+
+        function uniformMatrix(cacheId, programObj, vrName, transpose, matrix) {
+          var vrLocation = glCache.locations[cacheId];
+          if (vrLocation === undefined) {
+            vrLocation = gl.getUniformLocation(programObj, vrName);
+            glCache.locations[cacheId] = vrLocation;
+          }
+          gl.uniformMatrix4fv(vrLocation, transpose, matrix);
+        }
+
+        function vertexAttribPointer(cacheId, programObj, vrName, size, VBO) {
+          var vrLocation = glCache.locations[cacheId];
+          if (vrLocation === undefined) {
+            vrLocation = gl.getAttribLocation(programObj, vrName);
+            glCache.locations[cacheId] = vrLocation;
+          }
+          if (vrLocation !== -1) {
+            gl.enableVertexAttribArray(vrLocation);
+            gl.bindBuffer(gl.ARRAY_BUFFER, VBO);
+            gl.vertexAttribPointer(vrLocation, size, gl.FLOAT, false, 0, 0);
+          }
+        }
+
+        function disableVertexAttribArray(cacheId, programObj, vrName) {
+          var vrLocation = glCache.attributes[cacheId];
+          if (vrLocation === undefined) {
+            vrLocation = gl.getAttribLocation(programObj, vrName);
+            glCache.attributes[cacheId] = vrLocation;
+          }
+          if (vrLocation !== -1) {
+            gl.disableVertexAttribArray(vrLocation);
+          }
+        }
+        //Generate buffers for every block face and store them
+        var sideEdgeBuffers;
+        var indexBuffer;
+        /** Matrix and Vector transformation methods **/
+        //{
+        var matrix = matrix || newFloat32Array(16);
+        var projection = projection || newFloat32Array(16);
+
+        function trans(matrix, x, y, z) {
+          var a = matrix;
+          a[3] += a[0] * x + a[1] * y + a[2] * z;
+          a[7] += a[4] * x + a[5] * y + a[6] * z;
+          a[11] += a[8] * x + a[9] * y + a[10] * z;
+          a[15] += a[12] * x + a[13] * y + a[14] * z;
+        }
+
+        function rotX(matrix, angle) {
+          // source = [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1]
+          var elems = matrix;
+          var c = Math.cos(angle);
+          var s = Math.sin(angle);
+          var t = elems[1];
+          elems[1] = t * c + elems[2] * s;
+          elems[2] = t * -s + elems[2] * c;
+          t = elems[5];
+          elems[5] = t * c + elems[6] * s;
+          elems[6] = t * -s + elems[6] * c;
+          t = elems[9];
+          elems[9] = t * c + elems[10] * s;
+          elems[10] = t * -s + elems[10] * c;
+          t = elems[13];
+          elems[13] = t * c + elems[14] * s;
+          elems[14] = t * -s + elems[14] * c;
+        }
+
+        function rotY(matrix, angle) {
+          //source = c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 0, 0, 0, 1
+          var c = Math.cos(angle);
+          var s = Math.sin(angle);
+          var elems = matrix;
+          var t = elems[0];
+          elems[0] = t * c + elems[2] * -s;
+          elems[2] = t * s + elems[2] * c;
+          t = elems[4];
+          elems[4] = t * c + elems[6] * -s;
+          elems[6] = t * s + elems[6] * c;
+          t = elems[8];
+          elems[8] = t * c + elems[10] * -s;
+          elems[10] = t * s + elems[10] * c;
+          t = elems[12];
+          elems[12] = t * c + elems[14] * -s;
+          elems[14] = t * s + elems[14] * c;
+        }
+
+        function transpose(matrix) {
+          var temp = matrix[4];
+          matrix[4] = matrix[1];
+          matrix[1] = temp;
+          temp = matrix[8];
+          matrix[8] = matrix[2];
+          matrix[2] = temp;
+          temp = matrix[6];
+          matrix[6] = matrix[9];
+          matrix[9] = temp;
+          temp = matrix[3];
+          matrix[3] = matrix[12];
+          matrix[12] = temp;
+          temp = matrix[7];
+          matrix[7] = matrix[13];
+          matrix[13] = temp;
+          temp = matrix[11];
+          matrix[11] = matrix[14];
+          matrix[14] = temp;
+        }
+
+        function matMult() {
+          //Multiply the projection matrix by the view matrix; this is optimized specifically for these matrices by removing terms that are always 0.
+          var proj = projection;
+          var view = modelView;
+          matrix[0] = proj[0] * view[0];
+          matrix[1] = proj[0] * view[1];
+          matrix[2] = proj[0] * view[2];
+          matrix[3] = proj[0] * view[3];
+          matrix[4] = proj[5] * view[4];
+          matrix[5] = proj[5] * view[5];
+          matrix[6] = proj[5] * view[6];
+          matrix[7] = proj[5] * view[7];
+          matrix[8] = proj[10] * view[8] + proj[11] * view[12];
+          matrix[9] = proj[10] * view[9] + proj[11] * view[13];
+          matrix[10] = proj[10] * view[10] + proj[11] * view[14];
+          matrix[11] = proj[10] * view[11] + proj[11] * view[15];
+          matrix[12] = proj[14] * view[8];
+          matrix[13] = proj[14] * view[9];
+          matrix[14] = proj[14] * view[10];
+          matrix[15] = proj[14] * view[11];
+        }
+
+        function copyArr(a, b) {
+          for (var i = 0; i < a.length; i++) {
+            b[i] = a[i];
+          }
+        }
+
+        function FOV(fov) {
+          var tang = Math.tan((fov * 0.5 * Math.PI) / 180);
+          var scale = 1 / tang;
+          var near = 1;
+          var far = 1000000;
+          currentFov = fov;
+          nearH = near * tang;
+          projection[0] = (scale / width) * height;
+          projection[5] = scale;
+          projection[10] = -far / (far - near);
+          projection[11] = -1;
+          projection[14] = (-far * near) / (far - near);
+          // Set the projecction matrix in the shader
+          // copyArr(projection, matrix);
+          // transpose(matrix);
+          // uniformMatrix("projection3d", programObject3D, "uProjection", false, matrix);
+        }
+
+        function cross(v1, v2, result) {
+          var x = v1.x,
+            y = v1.y,
+            z = v1.z,
+            x2 = v2.x,
+            y2 = v2.y,
+            z2 = v2.z;
+          result.x = y * z2 - y2 * z;
+          result.y = z * x2 - z2 * x;
+          result.z = x * y2 - x2 * y;
+        }
+        //}
+        function Plane(nx, ny, nz) {
+          this.dx = nx > 0 ? 16 : 0;
+          this.dy = ny > 0;
+          this.dz = nz > 0 ? 16 : 0;
+          // Normal vector
+          this.nx = nx;
+          this.ny = ny;
+          this.nz = nz;
+        }
+        Plane.prototype.set = function (nx, ny, nz) {
+          this.dx = nx > 0 ? 16 : 0;
+          this.dy = ny > 0;
+          this.dz = nz > 0 ? 16 : 0;
+          this.nx = nx;
+          this.ny = ny;
+          this.nz = nz;
+        };
+
+        function computeFrustum() {
+          var X = vec1;
+          X.x = p.direction.z;
+          X.y = 0;
+          X.z = -p.direction.x;
+          X.normalize();
+          var Y = vec2;
+          Y.set(p.direction);
+          Y.mult(-1);
+          cross(Y, X, Y);
+          //Near plane (hoisted to outside the render loop to improve performance)
+          // var x = p.x + p.direction.x;
+          // var y = p.y + p.direction.y;
+          // var z = p.z + p.direction.z;
+          // p.frustum[0].set(x, y, z, p.direction.x, p.direction.y, p.direction.z);
+          var aux = vec3;
+          aux.set(Y);
+          aux.mult(nearH);
+          aux.add(p.direction);
+          aux.normalize();
+          cross(aux, X, aux);
+          p.frustum[0].set(aux.x, aux.y, aux.z);
+          aux.set(Y);
+          aux.mult(-nearH);
+          aux.add(p.direction);
+          aux.normalize();
+          cross(X, aux, aux);
+          p.frustum[1].set(aux.x, aux.y, aux.z);
+          aux.set(X);
+          aux.mult((-nearH * width) / height);
+          aux.add(p.direction);
+          aux.normalize();
+          cross(aux, Y, aux);
+          p.frustum[2].set(aux.x, aux.y, aux.z);
+          aux.set(X);
+          aux.mult((nearH * width) / height);
+          aux.add(p.direction);
+          aux.normalize();
+          cross(Y, aux, aux);
+          p.frustum[3].set(aux.x, aux.y, aux.z);
+        }
+        var chunkVisible = function (x, y, z, maxY) {
+          x -= 0.5;
+          y -= 0.5;
+          z -= 0.5;
+          maxY += 0.5;
+          var maxX = x + 16;
+          var maxZ = z + 16;
+          var px = 0,
+            py = 0,
+            pz = 0,
+            plane = null;
+          var cx = p.x,
+            cy = p.y,
+            cz = p.z;
+          for (var i = 0; i < 4; i++) {
+            plane = p.frustum[i];
+            px = x + plane.dx;
+            py = plane.dy ? maxY : y;
+            pz = z + plane.dz;
+            if (
+              (px - cx) * plane.nx +
+                (py - cy) * plane.ny +
+                (pz - cz) * plane.nz <
+              0
+            ) {
+              return false;
+            }
+          }
+          return true;
+        };
+        var defaultModelView = newFloat32Array([
+          -4, 0, 0, 0, 0, 4, 0, 0, 0, 0, -4, 0, 0, 0, 0, 1,
+        ]);
+        var initModelView = function (x, y, z, rx, ry) {
+          copyArr(defaultModelView, modelView);
+          rotX(modelView, rx);
+          rotY(modelView, ry);
+          trans(modelView, -x, -y, -z);
+          matMult();
+          transpose(matrix);
+          uniformMatrix("view3d", programObject3D, "uView", false, matrix);
+        };
+        var tex;
+
+        function getFaces(x, y, z) {
+          return (
+            (p.x < x - 0.5) |
+            ((p.x > x + 0.5) << 1) |
+            ((p.y < y - 0.5) << 2) |
+            ((p.y > y + 0.5) << 3) |
+            ((p.z < z - 0.5) << 4) |
+            ((p.z > z + 0.5) << 5)
+          );
+        }
+
+        function rayTrace(x, y, z, sides) {
+          x -= 0.5;
+          y -= 0.5;
+          z -= 0.5;
+          var cf,
+            cd = 1e9; //Closest face and distance
+          var m; //Absolute distance to intersection point
+          var ix, iy, iz; //Intersection coords
+          //Top and bottom faces
+          if (Block.top & sides && p.direction.y) {
+            m = (y - p.y) / p.direction.y;
+            ix = m * p.direction.x + p.x;
+            iz = m * p.direction.z + p.z;
+            if (
+              m > 0 &&
+              m < cd &&
+              ix >= x &&
+              ix <= x + 1 &&
+              iz >= z &&
+              iz <= z + 1
+            ) {
+              cd = m; //Ray crosses top face
+              cf = "top";
+            }
+          }
+          y += 1;
+          if (Block.bottom & sides && p.direction.y) {
+            m = (y - p.y) / p.direction.y;
+            ix = m * p.direction.x + p.x;
+            iz = m * p.direction.z + p.z;
+            if (
+              m > 0 &&
+              m < cd &&
+              ix >= x &&
+              ix <= x + 1 &&
+              iz >= z &&
+              iz <= z + 1
+            ) {
+              cd = m;
+              cf = "bottom";
+            }
+          }
+          y -= 1;
+          //West and East faces
+          if (Block.west & sides && p.direction.x) {
+            m = (x - p.x) / p.direction.x;
+            iy = m * p.direction.y + p.y;
+            iz = m * p.direction.z + p.z;
+            if (
+              m > 0 &&
+              m < cd &&
+              iy >= y &&
+              iy <= y + 1 &&
+              iz >= z &&
+              iz <= z + 1
+            ) {
+              cd = m;
+              cf = "west";
+            }
+          }
+          x += 1;
+          if (Block.east & sides && p.direction.x) {
+            m = (x - p.x) / p.direction.x;
+            iy = m * p.direction.y + p.y;
+            iz = m * p.direction.z + p.z;
+            if (
+              m > 0 &&
+              m < cd &&
+              iy >= y &&
+              iy <= y + 1 &&
+              iz >= z &&
+              iz <= z + 1
+            ) {
+              cd = m;
+              cf = "east";
+            }
+          }
+          x -= 1;
+          //South and North faces
+          if (Block.south & sides && p.direction.z) {
+            m = (z - p.z) / p.direction.z;
+            ix = m * p.direction.x + p.x;
+            iy = m * p.direction.y + p.y;
+            if (
+              m > 0 &&
+              m < cd &&
+              ix >= x &&
+              ix <= x + 1 &&
+              iy >= y &&
+              iy <= y + 1
+            ) {
+              cd = m;
+              cf = "south";
+            }
+          }
+          z += 1;
+          if (Block.north & sides && p.direction.z) {
+            m = (z - p.z) / p.direction.z;
+            ix = m * p.direction.x + p.x;
+            iy = m * p.direction.y + p.y;
+            if (
+              m > 0 &&
+              m < cd &&
+              ix >= x &&
+              ix <= x + 1 &&
+              iy >= y &&
+              iy <= y + 1
+            ) {
+              cd = m;
+              cf = "north";
+            }
+          }
+          return [cd, cf];
+        }
+
+        function runRayTrace(x, y, z, faces) {
+          var block = world.getBlock(x, y, z);
+          if (block) {
+            var rt = rayTrace(x, y, z, faces);
+            if (rt[1] && rt[0] < hitBox.closest) {
+              hitBox.closest = rt[0];
+              hitBox.face = rt[1];
+              hitBox.pos = [x, y, z];
+            }
+          }
+        }
+
+        function lookingAt() {
+          // Checks blocks in front of the player to see which one they're looking at
+          hitBox.pos = null;
+          hitBox.closest = 1e9;
+          var pd = p.direction;
+          // Target block
+          var tx = Math.round(pd.x * reach + p.x);
+          var ty = Math.round(pd.y * reach + p.y);
+          var tz = Math.round(pd.z * reach + p.z);
+          var minX = p2.x;
+          var maxX = 0;
+          var minY = p2.y;
+          var maxY = 0;
+          var minZ = p2.z;
+          var maxZ = 0;
+          var faces = getFaces(tx, ty, tz);
+          for (var i = 1; i < reach + 1; i++) {
+            if (i > reach) {
+              i = reach;
+            }
+            maxX = Math.round(p.x + pd.x * i);
+            maxY = Math.round(p.y + pd.y * i);
+            maxZ = Math.round(p.z + pd.z * i);
+            if (maxX === minX && maxY === minY && maxZ === minZ) {
+              continue;
+            }
+            if (minX !== maxX) {
+              if (minY !== maxY) {
+                if (minZ !== maxZ) {
+                  runRayTrace(maxX, maxY, maxZ, faces);
+                }
+                runRayTrace(maxX, maxY, minZ, faces);
+              }
+              if (minZ !== maxZ) {
+                runRayTrace(maxX, minY, maxZ, faces);
+              }
+              runRayTrace(maxX, minY, minZ, faces);
+            }
+            if (minY !== maxY) {
+              if (minZ !== maxZ) {
+                runRayTrace(minX, maxY, maxZ, faces);
+              }
+              runRayTrace(minX, maxY, minZ, faces);
+            }
+            if (minZ !== maxZ) {
+              runRayTrace(minX, minY, maxZ, faces);
+            }
+            if (hitBox.pos) {
+              if (typeof updateMobTarget === "function") updateMobTarget();
+              return; //The ray has collided; it can't possibly find a closer collision now
+            }
+            minZ = maxZ;
+            minY = maxY;
+            minX = maxX;
+          }
+        }
+        var inBox = function (x, y, z, w, h, d) {
+          var ix = x - w / 2 - p.w,
+            iw = w + p.w * 2,
+            iz = z - d / 2 - p.w,
+            id = d + p.w * 2,
+            iy = y - h / 2 - p.topH,
+            ih = h + p.bottomH + p.topH;
+          return (
+            p.x > ix &&
+            p.y > iy &&
+            p.z > iz &&
+            p.x < ix + iw &&
+            p.y < iy + ih &&
+            p.z < iz + id
+          );
+        };
+        var boxCollision = function (x, y, z, w, h, d, vx, vy, vz, dt) {
+          if (!inBox(x, y, z, w, h, d)) return;
+          var step = y + h / 2 - (p.y - p.bottomH);
+          if (
+            (vx || vz) &&
+            step > 0 &&
+            step < 0.6 &&
+            p.velocity.y === 0 &&
+            !p.flying
+          ) {
+            p.y = y + h / 2 + p.bottomH;
+            p.onGround = true;
+            return;
+          }
+          if (vx) {
+            p.x -= p.velocity.x * dt;
+            p.velocity.x = 0;
+          } else if (vz) {
+            p.z -= p.velocity.z * dt;
+            p.velocity.z = 0;
+          } else if (vy > 0) {
+            p.y -= p.velocity.y * dt;
+            p.velocity.y = 0;
+          } else {
+            p.y = y - h / 2 - p.topH + (h + p.bottomH + p.topH);
+            p.onGround = true;
+            p.velocity.y = 0;
+          }
+        };
+        var contacts = {
+          array: [],
+          size: 0,
+          add: function (x, y, z) {
+            if (this.size === this.array.length) {
+              this.array.push([x, y, z]);
+            } else {
+              this.array[this.size][0] = x;
+              this.array[this.size][1] = y;
+              this.array[this.size][2] = z;
+            }
+            this.size++;
+          },
+          clear: function () {
+            this.size = 0;
+          },
+        };
+        var resolveContactsAndUpdatePosition = function () {
+          var minX = p2.x - 1;
+          var maxX = p2.x + 1;
+          var minY = p2.y - 2;
+          var maxY = p2.y + 1;
+          var minZ = p2.z - 1;
+          var maxZ = p2.z + 1;
+          var wrld = world;
+          var cont = contacts;
+          var block = null;
+          var player = p;
+          for (var x = minX; x <= maxX; x++) {
+            for (var y = minY; y <= maxY; y++) {
+              for (var z = minZ; z <= maxZ; z++) {
+                if (wrld.getBlock(x, y, z)) {
+                  cont.add(x, y, z);
+                }
+              }
+            }
+          }
+          var dt = (win.performance.now() - p.lastUpdate) / 33;
+          dt = dt > 2 ? 2 : dt;
+          //Check collisions in the X direction
+          player.x += player.velocity.x * dt;
+          for (var i = 0; i < contacts.size; i++) {
+            block = cont.array[i];
+            var cboxes = getBlockCollisionBoxes(block[0], block[1], block[2]);
+            for (var cb = 0; cb < cboxes.length; cb++) {
+              var cbox = cboxes[cb];
+              boxCollision(
+                cbox[0],
+                cbox[1],
+                cbox[2],
+                cbox[3],
+                cbox[4],
+                cbox[5],
+                player.velocity.x,
+                0,
+                0,
+                dt
+              );
+            }
+          }
+          //Check collisions in the Y direction
+          player.y += player.velocity.y * dt;
+          for (var i = 0; i < contacts.size; i++) {
+            block = cont.array[i];
+            var cboxes = getBlockCollisionBoxes(block[0], block[1], block[2]);
+            for (var cb = 0; cb < cboxes.length; cb++) {
+              var cbox = cboxes[cb];
+              boxCollision(
+                cbox[0],
+                cbox[1],
+                cbox[2],
+                cbox[3],
+                cbox[4],
+                cbox[5],
+                0,
+                player.velocity.y,
+                0,
+                dt
+              );
+            }
+          }
+          //Check collisions in the Z direction
+          player.z += player.velocity.z * dt;
+          for (var i = 0; i < contacts.size; i++) {
+            block = cont.array[i];
+            var cboxes = getBlockCollisionBoxes(block[0], block[1], block[2]);
+            for (var cb = 0; cb < cboxes.length; cb++) {
+              var cbox = cboxes[cb];
+              boxCollision(
+                cbox[0],
+                cbox[1],
+                cbox[2],
+                cbox[3],
+                cbox[4],
+                cbox[5],
+                0,
+                0,
+                player.velocity.z,
+                dt
+              );
+            }
+          }
+          if (!p.flying) {
+            var drag = p.onGround ? 0.5 : 0.85;
+            var accz = p.velocity.z * drag - p.velocity.z;
+            p.velocity.z += (p.velocity.z * drag - p.velocity.z) * dt;
+            p.velocity.x += (p.velocity.x * drag - p.velocity.x) * dt;
+          } else {
+            var drag = 0.9;
+            var accz = p.velocity.z * drag - p.velocity.z;
+            p.velocity.z += (p.velocity.z * drag - p.velocity.z) * dt;
+            p.velocity.x += (p.velocity.x * drag - p.velocity.x) * dt;
+            p.velocity.y += (p.velocity.y * 0.8 - p.velocity.y) * dt;
+            if (p.onGround) {
+              p.flying = false;
+            }
+          }
+          p.lastUpdate = win.performance.now();
+          contacts.clear();
+          lookingAt();
+        };
+        var runGravity = function () {
+          if (p.flying) {
+            // サバイバルモードでは飛行を許可しない（セーブデータの飛行状態も解除する）
+            if (gameMode === "survival") {
+              p.flying = false;
+            } else {
+              p.fallStartY = null;
+              return;
+            }
+          }
+          var dt = (win.performance.now() - p.lastUpdate) / 33;
+          dt = dt > 2 ? 2 : dt;
+          if (p.onGround) {
+            // 着地時に落下ダメージを適用（サバイバルのみ・3マス以上で高さに応じたダメージ）
+            if (
+              gameMode === "survival" &&
+              p.fallStartY !== null &&
+              p.fallStartY !== undefined
+            ) {
+              var fallDist = p.fallStartY - p.y;
+              if (fallDist >= 3) {
+                var fallDamage = Math.floor(fallDist - 3) + 1;
+                p.health = Math.max(0, p.health - fallDamage);
+                updateHUD = true;
+              }
+              p.fallStartY = null;
+            }
+            if (Key[" "]) {
+              p.velocity.y = p.jumpSpeed;
+              p.onGround = false;
+              p.fallStartY = p.y;
+            } else {
+              p.velocity.y = 0;
+            }
+          } else {
+            // 空中では最高到達点を記録し続ける
+            if (
+              p.fallStartY === null ||
+              p.fallStartY === undefined ||
+              p.y > p.fallStartY
+            ) {
+              p.fallStartY = p.y;
+            }
+            p.velocity.y += p.gravityStength * dt;
+            if (p.velocity.y < -p.maxYVelocity) {
+              p.velocity.y = -p.maxYVelocity;
+            }
+          }
+          p.onGround = false;
+        };
+
+        function box2(x, y, z, sides, tex) {
+          var i = 0;
+          for (var side in Block) {
+            var sideIdx = Sides[side];
+            if (sides & Block[side]) {
+              vertexAttribPointer(
+                "aVertex",
+                programObject3D,
+                "aVertex",
+                3,
+                sideEdgeBuffers[sideIdx]
+              );
+              if (blockFill) {
+                var texKey = tex && tex.length >= 6 ? tex[sideIdx] : tex[i];
+                vertexAttribPointer(
+                  "aTexture",
+                  programObject3D,
+                  "aTexture",
+                  2,
+                  texCoordsBuffers[textureMap[texKey]]
+                );
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+              }
+              if (blockOutlines) {
+                vertexAttribPointer(
+                  "aTexture",
+                  programObject3D,
+                  "aTexture",
+                  2,
+                  texCoordsBuffers[textureMap.hitbox]
+                );
+                gl.drawArrays(gl.LINE_LOOP, 0, 4);
+              }
+            }
+            if (i < 2) {
+              i++;
+            }
+          }
+        }
+
+        function block(x, y, z, t) {
+          box2(x, y, z, 0xff, blockData[t].textures);
+        }
+
+        function block2(x, y, z, t) {
+          copyArr(modelView, matrix);
+          trans(modelView, x, y, z);
+          matMult();
+          trans(modelView, -x, -y, -z);
+          transpose(matrix);
+          uniformMatrix("view3d", programObject3D, "uView", false, matrix);
+          box2(x, y, z, 0xff, blockData[t].textures);
+        }
+        var changeWorldBlock = function (t, forceMeta) {
+          var pos = hitBox.pos;
+          if (pos && pos[1] > 0 && pos[1] < maxHeight) {
+            var blockVal = t || 0;
+            if (blockVal && gameMode === "survival") {
+              if (!consumeSelectedItem()) return;
+            }
+            var prevCustomId = world.getBlock(pos[0], pos[1], pos[2]);
+            if (!customIds[prevCustomId]) prevCustomId = 0;
+            world.setBlock(
+              hitBox.pos[0],
+              hitBox.pos[1],
+              hitBox.pos[2],
+              blockVal
+            );
+            var key = pos[0] + "," + pos[1] + "," + pos[2];
+            blockChanges[key] = blockVal;
+            if (blockVal === 78) {
+              var dx = -Math.sin(p.ry);
+              var dz = Math.cos(p.ry);
+              if (Math.abs(dx) > Math.abs(dz)) {
+                furnaceOrientations[key] = dx > 0 ? 1 : 3;
+              } else {
+                furnaceOrientations[key] = dz > 0 ? 0 : 2;
+              }
+            } else if (blockVal === 0) {
+              delete furnaceOrientations[key];
+            }
+            var doorPairY = null;
+            if (blockVal === 0) {
+              if (prevCustomId && customIds[prevCustomId].type === "door") {
+                doorPairY = removeDoorPair(
+                  pos[0],
+                  pos[1],
+                  pos[2],
+                  prevCustomId
+                );
+              }
+              delete blockMetadata[key];
+            } else if (customIds[blockVal]) {
+              blockMetadata[key] =
+                forceMeta !== undefined
+                  ? forceMeta
+                  : computePlacementMeta(blockVal, pos, hitBox.face);
+              if (
+                customIds[blockVal].type === "door" &&
+                placeDoorUpper(
+                  pos[0],
+                  pos[1],
+                  pos[2],
+                  blockVal,
+                  blockMetadata[key]
+                )
+              ) {
+                doorPairY = pos[1] + 1;
+              }
+            }
+            updateChunkBlockMapSingle(pos[0], pos[1], pos[2], blockVal);
+            if (
+              isMultiplayer &&
+              window.__mcMPBridge &&
+              typeof window.__mcMPBridge.localBlockChanged === "function"
+            ) {
+              // ブロックの種類に加えて向き・上下などのメタデータも同期する
+              window.__mcMPBridge.localBlockChanged(
+                pos[0],
+                pos[1],
+                pos[2],
+                blockVal,
+                furnaceOrientations[key],
+                blockMetadata[key]
+              );
+              // ドアは上下2ブロックで1組なので、相手側のブロックも同期する
+              if (doorPairY !== null) {
+                var dKey = pos[0] + "," + doorPairY + "," + pos[2];
+                window.__mcMPBridge.localBlockChanged(
+                  pos[0],
+                  doorPairY,
+                  pos[2],
+                  blockVal ? world.getBlock(pos[0], doorPairY, pos[2]) : 0,
+                  undefined,
+                  blockVal ? blockMetadata[dKey] : 0
+                );
+              }
+            }
+            if (blockVal) {
+              p.lastPlace = Date.now();
+            } else {
+              p.lastBreak = Date.now();
+            }
+          }
+        };
+        var saveWorld = function () {
+          try {
+            var saveKey = getSelectedWorldSaveKey();
+            var saveObj = {
+              id: saveKey,
+              worldSeed: worldSeed,
+              worldType: worldType,
+              gameMode: gameMode,
+              structuresEnabled: structuresEnabled,
+              health: p.health,
+              hunger: p.hunger,
+              hotbarCounts: inventory.hotbarCounts,
+              mainCounts: inventory.mainCounts,
+              holdingCount: inventory.holding ? inventory.holdingCount || 1 : 0,
+              blockChanges: blockChanges,
+              furnaceOrientations: furnaceOrientations,
+              blockMetadata: blockMetadata,
+              droppedItems: droppedItems,
+              mobs: (typeof mobs !== "undefined" ? mobs : [])
+                .map(function (m) {
+                  return {
+                    t: m.type,
+                    x: m.x,
+                    y: m.y,
+                    z: m.z,
+                    ry: m.ry,
+                    hp: m.hp,
+                    b: m.baby,
+                    age: Date.now() - m.bornAt,
+                  };
+                })
+                .slice(0, MOB_MAX),
+              playerX: p.x,
+              playerY: p.y,
+              playerZ: p.z,
+              playerRx: p.rx,
+              playerRy: p.ry,
+              flying: p.flying,
+              hotbar: inventory.hotbar,
+              hotbarSlot: inventory.hotbarSlot,
+              main: inventory.main,
+              savedAt: Date.now(),
+            };
+            // 1. Unlimited durable storage with IndexedDB
+            saveWorldToIDB(saveKey, saveObj);
+
+            // 2. Safe mirror to localStorage (ignoring quota limits if huge build)
+            try {
+              localStorage.setItem(saveKey, JSON.stringify(saveObj));
+            } catch (err) {}
+
+            console.log(
+              "ワールドをセーブしました: " +
+                saveKey +
+                " (ブロック変更数: " +
+                Object.keys(blockChanges).length +
+                ")"
+            );
+            return true;
+          } catch (e) {
+            console.error("セーブ失敗:", e);
+            return false;
+          }
+        };
+        var loadWorldData = function () {
+          // マルチプレイでは各タブのローカル保存を読み込まない。
+          // これを読むと同じルームの全員が同じ座標・HP・満腹度・インベントリ・
+          // ブロック変更を共有してしまうため、マルチの共有ブロックはRealtimeから受け取る。
+          if (isMultiplayer) {
+            savedWorldData = null;
+            blockChanges = {};
+            furnaceOrientations = {};
+            blockMetadata = {};
+            rebuildChunkBlockMap();
+            return;
+          }
+          try {
+            var saveKey = getSelectedWorldSaveKey();
+            var raw = localStorage.getItem(saveKey);
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              if (parsed) {
+                savedWorldData = parsed;
+                if (parsed.blockChanges) {
+                  blockChanges = Object.assign({}, parsed.blockChanges);
+                }
+                if (parsed.furnaceOrientations) {
+                  furnaceOrientations = Object.assign(
+                    {},
+                    parsed.furnaceOrientations
+                  );
+                }
+                if (parsed.blockMetadata) {
+                  blockMetadata = Object.assign({}, parsed.blockMetadata);
+                }
+                rebuildChunkBlockMap();
+                console.log(
+                  "ローカルセ   ブデータをロードしました: " +
+                    saveKey +
+                    " (ブロック変更数: " +
+                    Object.keys(blockChanges).length +
+                    ")"
+                );
+              }
+            }
+            if (window.indexedDB) {
+              loadWorldFromIDB(saveKey)
+                .then(function (idbData) {
+                  if (idbData && idbData.blockChanges) {
+                    if (
+                      Array.isArray(idbData.mobs) &&
+                      typeof loadMobsFromSave === "function"
+                    ) {
+                      mobs = [];
+                      loadMobsFromSave(idbData.mobs);
+                    }
+                    if (Array.isArray(idbData.droppedItems))
+                      droppedItems = idbData.droppedItems
+                        .filter(function (d) {
+                          return (
+                            d &&
+                            d.id &&
+                            Date.now() - (d.born || Date.now()) < DROP_LIFETIME
+                          );
+                        })
+                        .slice(0, DROP_MAX_ITEMS)
+                        .map(function (d) {
+                          d.count = Math.max(1, d.count || 1);
+                          return d;
+                        });
+                    if (idbData.furnaceOrientations) {
+                      furnaceOrientations = Object.assign(
+                        {},
+                        idbData.furnaceOrientations
+                      );
+                    }
+                    if (idbData.blockMetadata) {
+                      blockMetadata = Object.assign({}, idbData.blockMetadata);
+                    }
+                    var currentCount = Object.keys(blockChanges).length;
+                    var idbCount = Object.keys(idbData.blockChanges).length;
+                    if (idbCount >= currentCount) {
+                      blockChanges = Object.assign({}, idbData.blockChanges);
+                      rebuildChunkBlockMap();
+                      if (world && world.chunks) {
+                        for (var cx in world.chunks) {
+                          for (var cz in world.chunks[cx]) {
+                            var chk = world.chunks[cx][cz];
+                            if (chk && chk.populated) {
+                              chk.applySavedBlocks();
+                              chk.genMesh();
+                            }
+                          }
+                        }
+                      }
+                      console.log(
+                        "IndexedDBより完全セーブデータを同期完了: " +
+                          saveKey +
+                          " (" +
+                          idbCount +
+                          "ブロック)"
+                      );
+                    }
+                  }
+                })
+                .catch(function () {});
+            }
+            return !!savedWorldData;
+          } catch (e) {
+            console.error("ロード失敗:", e);
+            return false;
+          }
+        };
+
+        var newWorldBlock = function () {
+          if (!hitBox.pos || !holding) {
+            return;
+          }
+          // スポーンエッグはブロックを置かず、対応するモブを出現させる
+          if (typeof getSpawnEggTypes === "function") {
+            var eggType = getSpawnEggTypes()[holding];
+            if (eggType) {
+              spawnMobFromEgg(eggType);
+              return;
+            }
+          }
+          var x = 0,
+            y = 0,
+            z = 0,
+            pos = hitBox.pos;
+          var o = {
+            top: [0, -1, 0],
+            bottom: [0, 1, 0],
+            south: [0, 0, -1],
+            north: [0, 0, 1],
+            west: [-1, 0, 0],
+            east: [1, 0, 0],
+          }[hitBox.face];
+          if (o) {
+            x = o[0];
+            y = o[1];
+            z = o[2];
+          }
+          var tid = world.getBlock(pos[0], pos[1], pos[2]),
+            tkey = pos[0] + "," + pos[1] + "," + pos[2];
+
+          // 同じハーフブロックの結合だけは既存仕様として許可。
+          if (
+            customIds[holding] &&
+            customIds[holding].type === "slab" &&
+            tid === holding &&
+            (blockMetadata[tkey] || 0) !== 2 &&
+            !inBox(pos[0], pos[1], pos[2], 1, 1, 1)
+          ) {
+            changeWorldBlock(holding, 2);
+            return;
+          }
+
+          var tx = pos[0] + x,
+            ty = pos[1] + y,
+            tz = pos[2] + z;
+
+          // 設置先に既存ブロックがある場合は設置不可。
+          if (world.getBlock(tx, ty, tz) !== 0) {
+            return;
+          }
+
+          if (inBox(tx, ty, tz, 1, 1, 1)) {
+            return;
+          }
+
+          // ドアは上下2ブロックを使うため、上段も空いている必要がある。
+          if (
+            customIds[holding] &&
+            customIds[holding].type === "door" &&
+            world.getBlock(tx, ty + 1, tz) !== 0
+          ) {
+            return;
+          }
+
+          pos[0] = tx;
+          pos[1] = ty;
+          pos[2] = tz;
+          changeWorldBlock(holding);
+        };
+
+        var renderedChunks = 0;
+
+        function getBlock(x, y, z, blocks) {
+          return (
+            blocks[((x >> 4) + 1) * 9 + ((y >> 4) + 1) * 3 + (z >> 4) + 1][
+              ((x & 15) << 8) + ((y & 15) << 4) + (z & 15)
+            ] & 0xff
+          );
+        }
+
+        function hideFace(x, y, z, blocks, type, func) {
+          var block = func.call(world, x, y, z, blocks);
+          var data = blockData[block];
+          if (
+            !block ||
+            (block !== type && data.transparent) ||
+            (data.transparent && data.shadow)
+          ) {
+            return 1;
+          }
+          return 0;
+        }
+        var getShadows = {
+          shade: [1, 0.85, 0.7, 0.6, 0.3],
+          top: function (x, y, z, block) {
+            var blocks = [
+              blockData[getBlock(x - 1, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y - 1, z, block)].shadow,
+              blockData[getBlock(x, y - 1, z, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z, block)].shadow,
+              blockData[getBlock(x - 1, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z + 1, block)].shadow,
+            ];
+            return [
+              this.shade[blocks[0] + blocks[1] + blocks[3] + blocks[4]] * 0.8,
+              this.shade[blocks[1] + blocks[2] + blocks[4] + blocks[5]] * 0.8,
+              this.shade[blocks[5] + blocks[4] + blocks[8] + blocks[7]] * 0.8,
+              this.shade[blocks[4] + blocks[3] + blocks[7] + blocks[6]] * 0.8,
+            ];
+          },
+          bottom: function (x, y, z, block) {
+            var blocks = [
+              blockData[getBlock(x - 1, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z, block)].shadow,
+              blockData[getBlock(x, y + 1, z, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z + 1, block)].shadow,
+              blockData[getBlock(x, y + 1, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z + 1, block)].shadow,
+            ];
+            return [
+              this.shade[blocks[0] + blocks[1] + blocks[3] + blocks[4]],
+              this.shade[blocks[4] + blocks[3] + blocks[7] + blocks[6]],
+              this.shade[blocks[5] + blocks[4] + blocks[8] + blocks[7]],
+              this.shade[blocks[1] + blocks[2] + blocks[4] + blocks[5]],
+            ];
+          },
+          north: function (x, y, z, block) {
+            var blocks = [
+              blockData[getBlock(x - 1, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x - 1, y, z + 1, block)].shadow,
+              blockData[getBlock(x, y, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y, z + 1, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z + 1, block)].shadow,
+              blockData[getBlock(x, y + 1, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z + 1, block)].shadow,
+            ];
+            return [
+              this.shade[blocks[5] + blocks[4] + blocks[8] + blocks[7]],
+              this.shade[blocks[4] + blocks[3] + blocks[7] + blocks[6]],
+              this.shade[blocks[0] + blocks[1] + blocks[3] + blocks[4]],
+              this.shade[blocks[1] + blocks[2] + blocks[4] + blocks[5]],
+            ];
+          },
+          south: function (x, y, z, block) {
+            var blocks = [
+              blockData[getBlock(x - 1, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x, y, z - 1, block)].shadow,
+              blockData[getBlock(x, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z - 1, block)].shadow,
+            ];
+            return [
+              this.shade[blocks[1] + blocks[2] + blocks[4] + blocks[5]],
+              this.shade[blocks[5] + blocks[4] + blocks[8] + blocks[7]],
+              this.shade[blocks[4] + blocks[3] + blocks[7] + blocks[6]],
+              this.shade[blocks[0] + blocks[1] + blocks[3] + blocks[4]],
+            ];
+          },
+          east: function (x, y, z, block) {
+            var blocks = [
+              blockData[getBlock(x + 1, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z, block)].shadow,
+              blockData[getBlock(x + 1, y, z, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z, block)].shadow,
+              blockData[getBlock(x + 1, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y, z + 1, block)].shadow,
+              blockData[getBlock(x + 1, y + 1, z + 1, block)].shadow,
+            ];
+            return [
+              this.shade[blocks[1] + blocks[2] + blocks[4] + blocks[5]] * 0.8,
+              this.shade[blocks[5] + blocks[4] + blocks[8] + blocks[7]] * 0.8,
+              this.shade[blocks[4] + blocks[3] + blocks[7] + blocks[6]] * 0.8,
+              this.shade[blocks[0] + blocks[1] + blocks[3] + blocks[4]] * 0.8,
+            ];
+          },
+          west: function (x, y, z, block) {
+            var blocks = [
+              blockData[getBlock(x - 1, y - 1, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z - 1, block)].shadow,
+              blockData[getBlock(x - 1, y - 1, z, block)].shadow,
+              blockData[getBlock(x - 1, y, z, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z, block)].shadow,
+              blockData[getBlock(x - 1, y - 1, z + 1, block)].shadow,
+              blockData[getBlock(x - 1, y, z + 1, block)].shadow,
+              blockData[getBlock(x - 1, y + 1, z + 1, block)].shadow,
+            ];
+            return [
+              this.shade[blocks[7] + blocks[8] + blocks[4] + blocks[5]] * 0.8,
+              this.shade[blocks[5] + blocks[4] + blocks[2] + blocks[1]] * 0.8,
+              this.shade[blocks[4] + blocks[3] + blocks[1] + blocks[0]] * 0.8,
+              this.shade[blocks[6] + blocks[7] + blocks[3] + blocks[4]] * 0.8,
+            ];
+          },
+        };
+
+        /** Section Class **/
+        {
+          var Section = function (x, y, z, size, chunk) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.size = size;
+            this.arraySize = size * size * size;
+            this.blocks = newInt32Array(this.arraySize);
+            this.renderData = [];
+            this.renderLength = 0;
+            this.faces = 0;
+            this.hasVisibleBlocks = false;
+            this.chunk = chunk;
+          };
+          Section.prototype.getBlock = function (x, y, z) {
+            var s = this.size;
+            return this.blocks[x * s * s + y * s + z] & 0xff;
+          };
+          Section.prototype.setBlock = function (x, y, z, blockID, hidden) {
+            var s = this.size;
+            this.blocks[x * s * s + y * s + z] = (!hidden << 31) | blockID;
+          };
+          Section.prototype.deleteBlock = function (x, y, z) {
+            var s = this.size;
+            var data = this.blocks[x * s * s + y * s + z];
+            var index = this.renderData.indexOf(data);
+            if (index >= 0 && index < this.renderLength) {
+              this.renderData.splice(index, 1);
+              this.renderLength--;
+              this.hasVisibleBlocks = !!this.renderLength;
+              if (!world.meshQueue.includes(this.chunk)) {
+                world.meshQueue.push(this.chunk);
+              }
+            }
+            this.blocks[x * s * s + y * s + z] = blockIds.air;
+          };
+          Section.prototype.optimize = function (world) {
+            var visible = false;
+            var pos = 0;
+            var x = 0;
+            var y = 0;
+            var z = 0;
+            var xx = this.x;
+            var yy = this.y;
+            var zz = this.z;
+            var blockData = 0;
+            var blockType = 0;
+            var index = 0;
+            var s = this.size;
+            var blocks = this.blocks;
+            this.hasVisibleBlocks = false;
+            this.renderLength = 0;
+            var localBlocks = world.getAdjacentSubchunks(xx, yy, zz);
+            //Check all the blocks in the subchunk to see if they're visible.
+            for (var i = 0; i < s; i++) {
+              for (var j = 0; j < s; j++) {
+                for (var k = 0; k < s; k++, index++) {
+                  blockData = blocks[index];
+                  if (blockData >= 0) {
+                    continue;
+                  }
+                  blockType = blockData & 0xff;
+                  // x = i + xx;
+                  // y = j + yy;
+                  // z = k + zz;
+                  visible =
+                    hideFace(i - 1, j, k, localBlocks, blockType, getBlock) |
+                    (hideFace(i + 1, j, k, localBlocks, blockType, getBlock) <<
+                      1) |
+                    (hideFace(i, j - 1, k, localBlocks, blockType, getBlock) <<
+                      2) |
+                    (hideFace(i, j + 1, k, localBlocks, blockType, getBlock) <<
+                      3) |
+                    (hideFace(i, j, k - 1, localBlocks, blockType, getBlock) <<
+                      4) |
+                    (hideFace(i, j, k + 1, localBlocks, blockType, getBlock) <<
+                      5);
+                  if (visible) {
+                    pos = (i | (j << 4) | (k << 8)) << 16;
+                    blockData = (1 << 31) | pos | (visible << 8) | blockType;
+                    this.renderData[this.renderLength++] = blockData;
+                    blocks[index] = blockData;
+                    this.hasVisibleBlocks = true;
+                  } else {
+                    blocks[index] = blockType;
+                  }
+                }
+              }
+            }
+          };
+          Section.prototype.updateBlock = function (x, y, z, world) {
+            var i = x;
+            var j = y;
+            var k = z;
+            var s = this.size;
+            x += this.x;
+            y += this.y;
+            z += this.z;
+            var blockData = this.blocks[i * s * s + j * s + k];
+            var blockType = blockData & 0xff;
+            var visible =
+              blockType &&
+              hideFace(x - 1, y, z, 0, blockType, world.getBlock) |
+                (hideFace(x + 1, y, z, 0, blockType, world.getBlock) << 1) |
+                (hideFace(x, y - 1, z, 0, blockType, world.getBlock) << 2) |
+                (hideFace(x, y + 1, z, 0, blockType, world.getBlock) << 3) |
+                (hideFace(x, y, z - 1, 0, blockType, world.getBlock) << 4) |
+                (hideFace(x, y, z + 1, 0, blockType, world.getBlock) << 5);
+            var pos = (i | (j << 4) | (k << 8)) << 16;
+            var index = blockData < 0 ? this.renderData.indexOf(blockData) : -1;
+            if ((index < 0 || index >= this.renderLength) && !visible) {
+              if (!world.meshQueue.includes(this.chunk)) {
+                world.meshQueue.push(this.chunk);
+              }
+              return;
+            }
+            if (!visible) {
+              this.renderData.splice(index, 1);
+              this.blocks[i * s * s + j * s + k] = blockType; //Toggle invisible bit
+              this.renderLength--;
+              this.hasVisibleBlocks = !!this.renderLength;
+              if (!world.meshQueue.includes(this.chunk)) {
+                world.meshQueue.push(this.chunk);
+              }
+              this.chunk.minY = y < this.chunk.minY ? y : this.chunk.minY;
+              this.chunk.maxY = y > this.chunk.maxY ? y : this.chunk.maxY;
+              return;
+            }
+            if (visible && (index < 0 || index >= this.renderLength)) {
+              index = this.renderLength++;
+              this.hasVisibleBlocks = true;
+            }
+            this.chunk.minY = y < this.chunk.minY ? y : this.chunk.minY;
+            this.chunk.maxY = y > this.chunk.maxY ? y : this.chunk.maxY;
+            this.renderData[index] =
+              (1 << 31) | pos | (visible << 8) | (blockData & 0xff);
+            this.blocks[i * s * s + j * s + k] = this.renderData[index];
+            if (!world.meshQueue.includes(this.chunk)) {
+              world.meshQueue.push(this.chunk);
+            }
+          };
+          Section.prototype.genMesh = function (barray, index) {
+            if (!this.renderLength) {
+              return index;
+            }
+            var length = this.renderLength;
+            var rData = this.renderData;
+            var x = 0,
+              y = 0,
+              z = 0,
+              loc = 0,
+              data = 0,
+              sides = 0,
+              tex = null,
+              x2 = 0,
+              y2 = 0,
+              z2 = 0,
+              verts = null,
+              texVerts = null;
+            var wx = this.x,
+              wy = this.y,
+              wz = this.z;
+            var blocks = world.getAdjacentSubchunks(wx, wy, wz);
+            var start = Date.now();
+            var shadows = null;
+            var bData = blockData;
+            var gShadows = getShadows;
+            var sedgeVerts = sideEdgeVerts;
+            var tCoords = textureCoords;
+            var tmap = textureMap;
+            var block = Block;
+            var sideMap = Sides;
+            var blockSides = Object.keys(block);
+            var side = "";
+            for (var i = 0; i < length; i++) {
+              data = rData[i];
+              tex = bData[data & 0xff].textures;
+              sides = (data >> 8) & 0x3f;
+              loc = data >> 16;
+              x = loc & 15;
+              y = (loc >> 4) & 15;
+              z = (loc >> 8) & 15;
+              x2 = x + this.x;
+              y2 = y + this.y;
+              z2 = z + this.z;
+              if (customIds[data & 0xff]) {
+                index = genCustomBlockMesh(
+                  barray,
+                  index,
+                  data & 0xff,
+                  x,
+                  y,
+                  z,
+                  x2,
+                  y2,
+                  z2,
+                  blocks,
+                  gShadows,
+                  tCoords,
+                  tmap,
+                  sedgeVerts
+                );
+                continue;
+              }
+              var texNum = 0;
+              for (var n = 0; n < 6; n++) {
+                side = blockSides[n];
+                if (sides & block[side]) {
+                  shadows = gShadows[side](x, y, z, blocks);
+                  var sideIdx = sideMap[side];
+                  verts = sedgeVerts[sideIdx];
+                  var texKey;
+                  if ((data & 0xff) === 78 && sideIdx >= 2) {
+                    var furnaceKey = x2 + "," + y2 + "," + z2;
+                    var furnaceDir = furnaceOrientations[furnaceKey];
+                    if (furnaceDir === undefined) furnaceDir = 0;
+                    var furnaceFrontSide = [3, 5, 2, 4][furnaceDir];
+                    texKey =
+                      sideIdx === furnaceFrontSide
+                        ? "furnaceFront"
+                        : "furnaceSide";
+                  } else {
+                    texKey =
+                      tex && tex.length >= 6 ? tex[sideIdx] : tex[texNum];
+                  }
+                  texVerts = tCoords[tmap[texKey]];
+                  barray[index] = verts[0] + x2;
+                  barray[index + 1] = verts[1] + y2;
+                  barray[index + 2] = verts[2] + z2;
+                  barray[index + 3] = texVerts[0];
+                  barray[index + 4] = texVerts[1];
+                  barray[index + 5] = shadows[0];
+                  barray[index + 6] = verts[3] + x2;
+                  barray[index + 7] = verts[4] + y2;
+                  barray[index + 8] = verts[5] + z2;
+                  barray[index + 9] = texVerts[2];
+                  barray[index + 10] = texVerts[3];
+                  barray[index + 11] = shadows[1];
+                  barray[index + 12] = verts[6] + x2;
+                  barray[index + 13] = verts[7] + y2;
+                  barray[index + 14] = verts[8] + z2;
+                  barray[index + 15] = texVerts[4];
+                  barray[index + 16] = texVerts[5];
+                  barray[index + 17] = shadows[2];
+                  barray[index + 18] = verts[9] + x2;
+                  barray[index + 19] = verts[10] + y2;
+                  barray[index + 20] = verts[11] + z2;
+                  barray[index + 21] = texVerts[6];
+                  barray[index + 22] = texVerts[7];
+                  barray[index + 23] = shadows[3];
+                  index += 24;
+                }
+                if (texNum < 2) {
+                  texNum++;
+                }
+              }
+            }
+            return index;
+          };
+        }
+
+        function newSection(x, y, z, size, chunk) {
+          var section = Object.create(Section.prototype);
+          Section.apply(section, [x, y, z, size, chunk]);
+          return section;
+        }
+        var emptySection = newSection(0, 0, 0, 16);
+        /** Chunk Class **/
+        {
+          var Chunk = function (x, z) {
+            this.x = x;
+            this.z = z;
+            this.maxY = 0;
+            this.minY = 255;
+            this.sections = [];
+            this.optimized = false;
+            this.generated = false; //Terrain
+            this.populated = false; //Trees
+            this.lazy = false;
+          };
+          Chunk.prototype.getBlock = function (x, y, z) {
+            var s = y >> 4;
+            return this.sections.length > s
+              ? this.sections[s].getBlock(x, y & 15, z)
+              : 0;
+          };
+          Chunk.prototype.setBlock = function (x, y, z, blockID, hidden) {
+            if (!hidden) {
+              this.minY = y < this.minY ? y : this.minY;
+              this.maxY = y > this.maxY ? y : this.maxY;
+            }
+            if (!this.sections[y >> 4]) {
+              do {
+                this.sections.push(
+                  newSection(
+                    this.x,
+                    this.sections.length * 16,
+                    this.z,
+                    16,
+                    this
+                  )
+                );
+              } while (!this.sections[y >> 4]);
+            }
+            this.sections[y >> 4].setBlock(x, y & 15, z, blockID, hidden);
+          };
+          Chunk.prototype.optimize = function (world) {
+            for (var i = 0; i < this.sections.length; i++) {
+              this.sections[i].optimize(world);
+            }
+            if (!world.meshQueue.includes(this)) {
+              world.meshQueue.push(this);
+            }
+            this.optimized = true;
+          };
+          Chunk.prototype.render = function () {
+            if (!this.buffer) {
+              return;
+            }
+            if (chunkVisible(this.x, this.minY, this.z, this.maxY)) {
+              renderedChunks++;
+              gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+              gl.vertexAttribPointer(
+                glCache.locations.aVertex,
+                3,
+                gl.FLOAT,
+                false,
+                24,
+                0
+              );
+              gl.vertexAttribPointer(
+                glCache.locations.aTexture,
+                2,
+                gl.FLOAT,
+                false,
+                24,
+                12
+              );
+              gl.vertexAttribPointer(
+                glCache.locations.aShadow,
+                1,
+                gl.FLOAT,
+                false,
+                24,
+                20
+              );
+              gl.drawElements(gl.TRIANGLES, 6 * this.faces, gl.UNSIGNED_INT, 0);
+            }
+          };
+          Chunk.prototype.updateBlock = function (x, y, z, world, lazy) {
+            this.lazy = lazy;
+            if (this.sections.length > y >> 4) {
+              this.sections[y >> 4].updateBlock(x, y & 15, z, world);
+            }
+          };
+          Chunk.prototype.deleteBlock = function (x, y, z) {
+            this.sections[y >> 4].deleteBlock(x, y & 15, z);
+            this.minY = y < this.minY ? y : this.minY;
+            this.maxY = y > this.maxY ? y : this.maxY;
+          };
+          Chunk.prototype.populate = function () {
+            randomSeed(hash(this.x, this.z) * 210000000);
+            var wx = 0,
+              wz = 0,
+              ground = 0,
+              top = 0,
+              rand = 0,
+              place = false;
+            // 深さバンド適合度: depth01（0=石の上面 〜 1=岩盤付近）がバンド中心から離れるほど0に減衰する
+            var bandFit = function (depth01, center, width) {
+              var d = Math.abs(depth01 - center) / width;
+              return Math.max(0, 1 - d * d);
+            };
+            for (var i = 0; i < 16; i++) {
+              for (var k = 0; k < 16; k++) {
+                wx = this.x + i;
+                wz = this.z + k;
+                ground = terrainHeight(wx, wz);
+                if (structuresEnabled && random() < 0.01) {
+                  top = ground + Math.floor(4.5 + random(2.5));
+                  rand = Math.floor(random(4096));
+                  var tree =
+                    random() < 0.6
+                      ? blockIds.oakLog
+                      : ++top && blockIds.birchLog;
+                  //Center
+                  for (var j = ground + 1; j <= top; j++) {
+                    this.setBlock(i, j, k, tree);
+                  }
+                  this.setBlock(i, top + 1, k, blockIds.leaves);
+                  this.setBlock(i, ground, k, blockIds.dirt);
+                  //Bottom leaves
+                  for (var x = -2; x <= 2; x++) {
+                    for (var z = -2; z <= 2; z++) {
+                      if (x || z) {
+                        if (((x * z) & 7) === 4) {
+                          place = rand & 1;
+                          rand >>>= 1;
+                          if (place) {
+                            world.spawnBlock(
+                              wx + x,
+                              top - 2,
+                              wz + z,
+                              blockIds.leaves
+                            );
+                          }
+                        } else {
+                          world.spawnBlock(
+                            wx + x,
+                            top - 2,
+                            wz + z,
+                            blockIds.leaves
+                          );
+                        }
+                      }
+                    }
+                  }
+                  //2nd layer leaves
+                  for (var x = -2; x <= 2; x++) {
+                    for (var z = -2; z <= 2; z++) {
+                      if (x || z) {
+                        if (((x * z) & 7) === 4) {
+                          place = rand & 1;
+                          rand >>>= 1;
+                          if (place) {
+                            world.spawnBlock(
+                              wx + x,
+                              top - 1,
+                              wz + z,
+                              blockIds.leaves
+                            );
+                          }
+                        } else {
+                          world.spawnBlock(
+                            wx + x,
+                            top - 1,
+                            wz + z,
+                            blockIds.leaves
+                          );
+                        }
+                      }
+                    }
+                  }
+                  //3rd layer leaves
+                  for (var x = -1; x <= 1; x++) {
+                    for (var z = -1; z <= 1; z++) {
+                      if (x || z) {
+                        if (x & z) {
+                          place = rand & 1;
+                          rand >>>= 1;
+                          if (place) {
+                            world.spawnBlock(
+                              wx + x,
+                              top,
+                              wz + z,
+                              blockIds.leaves
+                            );
+                          }
+                        } else {
+                          world.spawnBlock(
+                            wx + x,
+                            top,
+                            wz + z,
+                            blockIds.leaves
+                          );
+                        }
+                      }
+                    }
+                  }
+                  //Top leaves
+                  world.spawnBlock(wx + 1, top + 1, wz, blockIds.leaves);
+                  world.spawnBlock(wx, top + 1, wz - 1, blockIds.leaves);
+                  world.spawnBlock(wx, top + 1, wz + 1, blockIds.leaves);
+                  world.spawnBlock(wx - 1, top + 1, wz, blockIds.leaves);
+                }
+                // ===== 鉱石生成：深さ（y）によって出現する鉱石と出現率が連続的に変わる =====
+                ground -= 4;
+                var stoneTop = Math.max(3, ground);
+                var depth01 = 0;
+                var oy = 0;
+                // 石炭: 表層中心。地表近くの石に多く、深いほど減る
+                oy = 1 + Math.floor(random() * Math.min(stoneTop - 1, 20));
+                depth01 = (stoneTop - oy) / (stoneTop - 1);
+                if (random() < 0.28 + 0.3 * bandFit(depth01, 0.1, 0.5)) {
+                  this.setBlock(i, oy, k, blockIds.coalOre, true);
+                }
+                // 鉄: 中間層中心。浅すぎ・深すぎると減る
+                oy = 1 + Math.floor(random() * Math.max(1, stoneTop - 2));
+                depth01 = (stoneTop - oy) / (stoneTop - 1);
+                if (random() < 0.08 + 0.3 * bandFit(depth01, 0.5, 0.4)) {
+                  this.setBlock(i, oy, k, blockIds.ironOre, true);
+                }
+                // レッドストーン: 深部中心
+                oy =
+                  1 +
+                  Math.floor(
+                    random() * Math.max(1, Math.floor(stoneTop * 0.5))
+                  );
+                depth01 = (stoneTop - oy) / (stoneTop - 1);
+                if (random() < 0.015 + 0.09 * bandFit(depth01, 0.85, 0.35)) {
+                  this.setBlock(i, oy, k, blockIds.redstoneOre, true);
+                }
+                // ラピス: 深部寄り
+                oy =
+                  1 +
+                  Math.floor(
+                    random() * Math.max(1, Math.floor(stoneTop * 0.45))
+                  );
+                depth01 = (stoneTop - oy) / (stoneTop - 1);
+                if (random() < 0.004 + 0.018 * bandFit(depth01, 0.8, 0.3)) {
+                  this.setBlock(i, oy, k, blockIds.lapisOre, true);
+                }
+                // 金: 深部のみ
+                oy =
+                  1 +
+                  Math.floor(
+                    random() * Math.max(1, Math.floor(stoneTop * 0.35))
+                  );
+                depth01 = (stoneTop - oy) / (stoneTop - 1);
+                if (random() < 0.002 + 0.05 * bandFit(depth01, 0.9, 0.25)) {
+                  this.setBlock(i, oy, k, blockIds.goldOre, true);
+                }
+                // ダイヤ: 最深部のみ
+                oy =
+                  1 +
+                  Math.floor(
+                    random() * Math.max(1, Math.floor(stoneTop * 0.25))
+                  );
+                depth01 = (stoneTop - oy) / (stoneTop - 1);
+                if (random() < 0.0008 + 0.022 * bandFit(depth01, 0.95, 0.2)) {
+                  this.setBlock(i, oy, k, blockIds.diamondOre, true);
+                }
+              }
+            }
+            this.populated = true;
+            this.applySavedBlocks();
+          };
+          Chunk.prototype.applySavedBlocks = function () {
+            var cx = this.x >> 4;
+            var cz = this.z >> 4;
+            var chunkKey = cx + "," + cz;
+            var mods = chunkBlockMap[chunkKey];
+            if (!mods || !mods.length) return;
+            for (var idx = 0; idx < mods.length; idx++) {
+              var m = mods[idx];
+              if (m.id > 0) {
+                this.setBlock(m.lx, m.y, m.lz, m.id, false);
+              } else {
+                if (this.sections[m.y >> 4]) {
+                  this.deleteBlock(m.lx, m.y, m.lz);
+                }
+              }
+            }
+          };
+          Chunk.prototype.genMesh = function () {
+            var start = win.performance.now();
+            var barray = bigArray;
+            var index = 0;
+            var g = gl;
+            for (var i = 0; i < this.sections.length; i++) {
+              index = this.sections[i].genMesh(barray, index);
+            }
+            var arrayDone = win.performance.now();
+            if (!this.buffer) {
+              this.buffer = g.createBuffer();
+            }
+            var data = barray.slice(0, index);
+            this.faces = data.length / 24;
+            g.bindBuffer(g.ARRAY_BUFFER, this.buffer);
+            g.bufferData(g.ARRAY_BUFFER, data, g.DYNAMIC_DRAW);
+            this.lazy = false;
+            if (arrayDone - start > 3) {
+              //console.log((arrayDone - start).toFixed(1), (win.performance.now() - arrayDone).toFixed(1), this.faces, this.sections.length);
+            }
+          };
+        }
+
+        function newChunk(x, z) {
+          var chunk = Object.create(Chunk.prototype);
+          Chunk.apply(chunk, [x, z]);
+          return chunk;
+        }
+        var analytics = {
+          totalTickTime: 0,
+          worstFrameTime: 0,
+          totalRenderTime: 0,
+          totalFrameTime: 0,
+          lastUpdate: 0,
+          frames: 1,
+          displayedTickTime: "0",
+          displayedRenderTime: "0",
+          displayedFrameTime: "0",
+          displayedwFrameTime: 0,
+          fps: 0,
+        };
+
+        function sortChunks(c1, c2) {
+          //Sort the list of chunks based on distance from the player
+          var dx1 = p.x - c1.x - 8;
+          var dy1 = p.z - c1.z - 8;
+          var dx2 = p.x - c2.x - 8;
+          var dy2 = p.z - c2.z - 8;
+          return dx1 * dx1 + dy1 * dy1 - (dx2 * dx2 + dy2 * dy2);
+        }
+
+        function optimizeLater(x, z) {
+          var chunk = world.chunks[x] ? world.chunks[x][z] : null;
+          if (chunk && chunk.buffer && !world.optimizeQueue.includes(chunk)) {
+            world.optimizeQueue.push(chunk);
+          }
+        }
+        /** World Class **/
+        {
+          var genChunk = function (chunk) {
+            var one = Date.now();
+            var x = chunk.x >> 4;
+            var z = chunk.z >> 4;
+            var trueX = chunk.x;
+            var trueZ = chunk.z;
+            if (chunk.generated) {
+              return false;
+            }
+            var smoothness = generator.smooth;
+            var hilliness = generator.height;
+            // ワールドシードからバイオーム特性を決定（ワールドごとに異なる地形）
+            var biomeVariant = worldSeed % 8;
+            // 大スケールノイズ（山/平地の分布）
+            var macroSmooth = smoothness * 0.3;
+            // 小スケールノイズ（細かい凹凸）
+            var microSmooth = smoothness * 2.5;
+            // バイオームごとに地形パラメータを変化させる
+            var macroScale = hilliness * (0.4 + (biomeVariant % 4) * 0.2);
+            var microScale = hilliness * 0.18;
+            var baseHeight = 20 + (biomeVariant % 5) * 8;
+            var gen = 0;
+            for (var i = 0; i < 16; i++) {
+              for (var k = 0; k < 16; k++) {
+                var wx = trueX + i;
+                var wz = trueZ + k;
+                gen = terrainHeight(wx, wz);
+                chunk.setBlock(i, gen, k, blockIds.grass);
+                chunk.setBlock(i, gen - 1, k, blockIds.dirt);
+                chunk.setBlock(i, gen - 2, k, blockIds.dirt);
+                chunk.setBlock(i, gen - 3, k, blockIds.dirt);
+                for (var j = 1; j < gen - 3; j++) {
+                  chunk.setBlock(i, j, k, blockIds.stone, true);
+                }
+                chunk.setBlock(i, 0, k, blockIds.bedrock, true);
+              }
+            }
+            chunk.generated = true;
+            generatedChunks++;
+            optimizeLater(x + 1, z);
+            optimizeLater(x - 1, z);
+            optimizeLater(x, z + 1);
+            optimizeLater(x, z - 1);
+            return true;
+          };
+          var getAdjacentSubchunks = function (x, y, z) {
+            var minChunkX = (x - 16) >> 4;
+            var maxChunkX = (x + 16) >> 4;
+            var minChunkY = (y - 16) >> 4;
+            var maxChunkY = (y + 16) >> 4;
+            var minChunkZ = (z - 16) >> 4;
+            var maxChunkZ = (z + 16) >> 4;
+            var ret = [];
+            for (var cx = minChunkX; cx <= maxChunkX; cx++) {
+              for (var cy = minChunkY; cy <= maxChunkY; cy++) {
+                for (var cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                  if (this.chunks[cx] && this.chunks[cx][cz]) {
+                    ret.push(
+                      (this.chunks[cx][cz].sections[cy] || emptySection).blocks
+                    );
+                  } else {
+                    ret.push(emptySection.blocks);
+                  }
+                }
+              }
+            }
+            return ret;
+          };
+
+          var updateBlock = function (x, y, z, lazy) {
+            if (
+              this.chunks[x >> 4] &&
+              this.chunks[x >> 4][z >> 4] &&
+              this.chunks[x >> 4][z >> 4].buffer
+            ) {
+              this.chunks[x >> 4][z >> 4].updateBlock(
+                x & 15,
+                y,
+                z & 15,
+                this,
+                lazy
+              );
+            }
+          };
+          var getWorldBlock = function (x, y, z) {
+            if (!this.chunks[x >> 4] || !this.chunks[x >> 4][z >> 4]) {
+              return blockIds.air;
+            }
+            return this.chunks[x >> 4][z >> 4].getBlock(x & 15, y, z & 15);
+          };
+          var getLoadedBlock = function (x, y, z) {
+            var X = (x >> 4) + this.offsetX;
+            var Z = (z >> 4) + this.offsetZ;
+            if (y < 0 || y > maxHeight) {
+              return blockIds.air;
+            } else if (X < 0 || X >= this.lwidth || Z < 0 || Z >= this.lwidth) {
+              return this.getWorldBlock(x, y, z);
+            }
+            return this.loaded[X * this.lwidth + Z].getBlock(x & 15, y, z & 15);
+          };
+          var setBlock = function (x, y, z, blockID, lazy) {
+            if (!this.chunks[x >> 4] || !this.chunks[x >> 4][z >> 4]) {
+              return;
+            }
+            var chunk = this.chunks[x >> 4][z >> 4];
+            if (blockID) {
+              chunk.setBlock(x & 15, y, z & 15, blockID, false);
+            } else {
+              chunk.deleteBlock(x & 15, y, z & 15);
+            }
+            //Update the 6 adjacent blocks and 1 changed block
+            this.updateBlock(x - 1, y, z, lazy);
+            this.updateBlock(x + 1, y, z, lazy);
+            this.updateBlock(x, y - 1, z, lazy);
+            this.updateBlock(x, y + 1, z, lazy);
+            this.updateBlock(x, y, z - 1, lazy);
+            this.updateBlock(x, y, z + 1, lazy);
+            this.updateBlock(x, y, z, lazy);
+            //Update the 8 corners so shadows in adjacent chunks update correctly
+            this.updateBlock(x - 1, y - 1, z - 1, lazy);
+            this.updateBlock(x + 1, y - 1, z - 1, lazy);
+            this.updateBlock(x - 1, y - 1, z + 1, lazy);
+            this.updateBlock(x + 1, y - 1, z + 1, lazy);
+            this.updateBlock(x - 1, y + 1, z - 1, lazy);
+            this.updateBlock(x + 1, y + 1, z - 1, lazy);
+            this.updateBlock(x - 1, y + 1, z + 1, lazy);
+            this.updateBlock(x + 1, y + 1, z + 1, lazy);
+          };
+          var spawnBlock = function (x, y, z, blockID) {
+            //Sets a block anywhere without causing block updates around it. Only to be used in world gen.
+            var chunkX = x >> 4;
+            var chunkZ = z >> 4;
+            if (!this.chunks[chunkX]) {
+              this.chunks[chunkX] = [];
+            }
+            var chunk = this.chunks[chunkX][chunkZ];
+            if (!chunk) {
+              chunk = newChunk(chunkX * 16, chunkZ * 16);
+              this.chunks[chunkX][chunkZ] = chunk;
+            }
+            if (chunk.buffer) {
+              //Only used if spawning a block post-gen
+              this.setBlock(x, y, z, blockID, true);
+            } else if (!chunk.getBlock(x & 15, y, z & 15)) {
+              chunk.setBlock(x & 15, y, z & 15, blockID, false);
+            }
+          };
+          var tick = function () {
+            var maxChunkX = (p.x >> 4) + renderDistance;
+            var maxChunkZ = (p.z >> 4) + renderDistance;
+            var chunk = maxChunkX + "," + maxChunkZ;
+            updateDroppedItems();
+            if (typeof updateMobs === "function") updateMobs();
+            if (chunk !== this.lastChunk) {
+              this.lastChunk = chunk;
+              this.loadChunks();
+              this.chunkGenQueue.sort(sortChunks);
+            }
+            if (Key.leftMouse && p.lastBreak < Date.now() - 250) {
+              // モブに当たっていれば攻撃、当たらなければブロックを破壊
+              if (!(typeof mobTryAttack === "function" && mobTryAttack()))
+                tryBreakBlock();
+            }
+            if (
+              (Key.rightMouse || (Key.leftMouse && Key.control)) &&
+              p.lastPlace < Date.now() - 250
+            ) {
+              p.lastPlace = Date.now();
+              if (hitBox.pos && !Key.shift) {
+                var tb = world.getBlock(
+                  hitBox.pos[0],
+                  hitBox.pos[1],
+                  hitBox.pos[2]
+                );
+                if (tb === 76) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  screen = "inventory";
+                  invView = "craftingTable";
+                  releasePointer();
+                  updateMobileControls();
+                  return;
+                } else if (tb === 78) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  screen = "inventory";
+                  invView = "furnace";
+                  releasePointer();
+                  updateMobileControls();
+                  return;
+                } else if (
+                  tb &&
+                  customIds[tb] &&
+                  customIds[tb].type === "door"
+                ) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  toggleDoor();
+                  return;
+                }
+              }
+              newWorldBlock();
+            }
+            if (Key.leftMouse && p.autoBreak && !Key.control) {
+              tryBreakBlock();
+            }
+            var doneWork = false;
+            if (this.meshQueue.length) {
+              // ブロック大量設置時に1フレームで全メッシュ再構築するとフリーズするので
+              // 1フレームあたりの再構築数を制限し、   りは後続フレームに分散する
+              var maxRebuild = 4;
+              var rebuilt = 0;
+              for (var m = 0; m < this.meshQueue.length; m++) {
+                var chunk = this.meshQueue[m];
+                if (chunk.lazy) {
+                  continue;
+                }
+                chunk.genMesh();
+                this.meshQueue.splice(m, 1);
+                m--;
+                rebuilt++;
+                if (rebuilt >= maxRebuild) {
+                  break;
+                }
+              }
+              if (rebuilt === 0 && this.meshQueue.length) {
+                this.meshQueue.pop().genMesh();
+              }
+              doneWork = true;
+            }
+            if (this.chunkGenQueue.length && !doneWork) {
+              do {
+                var chunk = this.chunkGenQueue[0];
+                if (!chunk.generated) {
+                  this.genChunk(chunk);
+                } else if (!chunk.populated) {
+                  chunk.populate();
+                } else if (!chunk.optimized) {
+                  chunk.optimize(this);
+                } else if (!chunk.buffer) {
+                  chunk.genMesh();
+                } else {
+                  this.chunkGenQueue.shift();
+                  if (this.chunkGenQueue.length) {
+                    continue;
+                  }
+                }
+                break;
+              } while (this.chunkGenQueue.length);
+              doneWork = !!this.chunkGenQueue.length;
+            }
+            if (this.optimizeQueue.length && !doneWork) {
+              this.optimizeQueue.shift().optimize(this);
+              doneWork = true;
+            }
+          };
+          var render = function () {
+            initModelView(p.x, p.y, p.z, p.rx, p.ry);
+            for (var cm = 0; cm < 16; cm++) cameraModelView[cm] = modelView[cm];
+            p2.x = Math.round(p.x);
+            p2.y = Math.round(p.y);
+            p2.z = Math.round(p.z);
+            renderedChunks = 0;
+            gl.enableVertexAttribArray(glCache.locations.aShadow);
+            var c = this.sortedChunks;
+            var lx = p.direction.x;
+            var ly = p.direction.y;
+            var lz = p.direction.z;
+            var nlx = lx < 0 ? 0 : 16;
+            var nly = ly < 0;
+            var nlz = lz < 0 ? 0 : 16;
+            var x = p.x;
+            var y = p.y;
+            var z = p.z;
+            var dx = 0,
+              dy = 0,
+              dz = 0;
+            var chunk = null;
+            for (var i = 0, l = c.length; i < l; i++) {
+              chunk = c[i];
+              dx = chunk.x - x + nlx;
+              dy = (nly ? chunk.minY : chunk.maxY) - y;
+              dz = chunk.z - z + nlz;
+              if (dx * lx + dy * ly + dz * lz > 0) {
+                chunk.render();
+              }
+            }
+            renderDroppedItems();
+            if (typeof renderMobs === "function") renderMobs();
+            if (hitBox.pos) {
+              blockOutlines = true;
+              blockFill = false;
+              block2(hitBox.pos[0], hitBox.pos[1], hitBox.pos[2], 0);
+              blockOutlines = false;
+              blockFill = true;
+            }
+            gl.flush();
+          };
+          var loadChunks = function () {
+            var minChunkX = (p.x >> 4) - renderDistance;
+            var maxChunkX = (p.x >> 4) + renderDistance;
+            var minChunkZ = (p.z >> 4) - renderDistance;
+            var maxChunkZ = (p.z >> 4) + renderDistance;
+            this.offsetX = -minChunkX;
+            this.offsetZ = -minChunkZ;
+            this.lwidth = renderDistance * 2 + 1;
+            if (this.loaded.length > this.lwidth * this.lwidth) {
+              this.loaded.length = this.lwidth * this.lwidth;
+            }
+            var i = 0;
+            for (var x = minChunkX; x <= maxChunkX; x++) {
+              for (var z = minChunkZ; z <= maxChunkZ; z++) {
+                var chunk;
+                if (!this.chunks[x]) {
+                  this.chunks[x] = [];
+                }
+                if (!this.chunks[x][z]) {
+                  chunk = newChunk(x * 16, z * 16);
+                  this.chunkGenQueue.push(chunk);
+                  this.chunks[x][z] = chunk;
+                }
+                chunk = this.chunks[x][z];
+                if (!chunk.generated && !this.chunkGenQueue.includes(chunk)) {
+                  this.chunkGenQueue.push(chunk);
+                }
+                this.loaded[i++] = chunk;
+              }
+            }
+            this.sortedChunks = this.loaded.slice();
+            this.sortedChunks.sort(sortChunks);
+          };
+        }
+
+        function World() {
+          //Initialize the world's arrays
+          var loaded = [];
+          var chunks = [];
+          var queue = [];
+          var lwidth = renderDistance * 2 + 1;
+          var cx = renderDistance - (p.x >> 4);
+          var cz = renderDistance - (p.z >> 4);
+          var i = 0;
+          for (var x = 0; x < lwidth; x++) {
+            chunks[x - cx] = [];
+            for (var z = 0; z < lwidth; z++) {
+              var chunk = newChunk((x - cx) * 16, (z - cz) * 16);
+              loaded[i++] = chunk;
+              chunks[x - cx][z - cz] = chunk;
+              queue.push(chunk);
+            }
+          }
+          queue.sort(sortChunks);
+          var sorted = queue.slice();
+          return {
+            chunks: chunks,
+            loaded: loaded,
+            sortedChunks: sorted,
+            offsetX: cx,
+            offsetZ: cz,
+            lwidth: lwidth,
+            chunkGenQueue: queue,
+            optimizeQueue: [],
+            meshQueue: [],
+            renderDistance: renderDistance * 16,
+            lastChunk: cx + "," + cz,
+            genChunk: genChunk,
+            getAdjacentSubchunks: getAdjacentSubchunks,
+            updateBlock: updateBlock,
+            getBlock: getLoadedBlock,
+            getWorldBlock: getWorldBlock,
+            setBlock: setBlock,
+            spawnBlock: spawnBlock,
+            tick: tick,
+            render: render,
+            loadChunks: loadChunks,
+          };
+        }
+        var defineWorld = function () {
+          var tickStart = win.performance.now();
+          world.tick();
+          analytics.totalTickTime += win.performance.now() - tickStart;
+          var renderStart = win.performance.now();
+          world.render();
+          analytics.totalRenderTime += win.performance.now() - renderStart;
+        };
+        var controls = function () {
+          move.x = 0;
+          move.z = 0;
+          var dt = (win.performance.now() - p.lastUpdate) / 33;
+          dt = dt > 2 ? 2 : dt;
+          if (Key.w) {
+            //move.z += cos(p.ry) * p.speed;
+            //move.x -= sin(p.ry) * p.speed;
+            move.z += p.speed;
+          }
+          if (Key.s) {
+            //move.z -= cos(p.ry) * p.speed;
+            //move.x += sin(p.ry) * p.speed;
+            move.z -= p.speed;
+          }
+          if (Key.a) {
+            //move.x += cos(p.ry) * p.speed;
+            //move.z += sin(p.ry) * p.speed;
+            move.x += p.speed;
+          }
+          if (Key.d) {
+            //move.x -= cos(p.ry) * p.speed;
+            //move.z -= sin(p.ry) * p.speed;
+            move.x -= p.speed;
+          }
+          if (p.flying) {
+            if (Key[" "]) {
+              p.velocity.y += 0.06 * dt;
+            }
+            if (Key.shift) {
+              p.velocity.y -= 0.06 * dt;
+            }
+          }
+          if (Key.arrowleft) {
+            p.ry -= 0.1 * dt;
+          }
+          if (Key.arrowright) {
+            p.ry += 0.1 * dt;
+          }
+          if (Key.arrowup) {
+            p.rx += 0.1 * dt;
+          }
+          if (Key.arrowdown) {
+            p.rx -= 0.1 * dt;
+          }
+          if (Key.q) {
+            p.sprinting = true;
+          }
+          if (p.sprinting) {
+            move.x *= p.sprintSpeed;
+            move.z *= p.sprintSpeed;
+          }
+          if (p.flying) {
+            move.x *= p.flySpeed;
+            move.z *= p.flySpeed;
+          }
+          if (!move.x && !move.z) {
+            p.sprinting = false;
+          } else if (Math.abs(move.x) > 0 && Math.abs(move.z) > 0) {
+            move.x *= move.ang;
+            move.z *= move.ang;
+          }
+          //Update the velocity, rather than the position.
+          var co = Math.cos(p.ry);
+          var si = Math.sin(p.ry);
+          var friction = p.onGround ? 1 : 0.3;
+          p.velocity.x += (co * move.x - si * move.z) * friction * dt;
+          p.velocity.z += (si * move.x + co * move.z) * friction * dt;
+          while (p.ry > Math.PI * 2) {
+            p.ry -= Math.PI * 2;
+          }
+          while (p.ry < 0) {
+            p.ry += Math.PI * 2;
+          }
+          if (p.rx > Math.PI / 2) {
+            p.rx = Math.PI / 2;
+          }
+          if (p.rx < -Math.PI / 2) {
+            p.rx = -Math.PI / 2;
+          }
+          p.direction.set(
+            -si * Math.cos(p.rx),
+            Math.sin(p.rx),
+            co * Math.cos(p.rx)
+          );
+          computeFrustum();
+        };
+        var preventDefault = function (e) {
+          e.preventDefault();
+          if (e.deltaY > 0) {
+            inventory.hotbarSlot++;
+          } else if (e.deltaY < 0) {
+            inventory.hotbarSlot--;
+          }
+          if (inventory.hotbarSlot > 8) {
+            inventory.hotbarSlot = 0;
+          } else if (inventory.hotbarSlot < 0) {
+            inventory.hotbarSlot = 8;
+          }
+          updateHUD = true;
+          holding = inventory.hotbar[inventory.hotbarSlot];
+          inventory.holdingCount =
+            inventory.hotbarCounts[inventory.hotbarSlot] || (holding ? 1 : 0);
+        };
+        var keys = {
+          32: 1,
+          37: 1,
+          38: 1,
+          39: 1,
+          40: 1,
+        };
+
+        function preventDefaultForScrollKeys(e) {
+          if (keys[e.keyCode]) {
+            e.preventDefault();
+            return false;
+          }
+        }
+        // modern Chrome requires { passive: false } when adding event
+        var supportsPassive = false;
+        try {
+          window.addEventListener(
+            "test",
+            null,
+            Object.defineProperty({}, "passive", {
+              get: function () {
+                supportsPassive = true;
+              },
+            })
+          );
+        } catch (e) {}
+        var wheelOpt = supportsPassive
+          ? {
+              passive: false,
+            }
+          : false;
+        var wheelEvent =
+          "onwheel" in document.createElement("div") ? "wheel" : "mousewheel";
+        // call this to Disable
+        function disableScroll() {
+          window.addEventListener("DOMMouseScroll", preventDefault, false); // older FF
+          window.addEventListener(wheelEvent, preventDefault, wheelOpt); // modern desktop
+          window.addEventListener("touchmove", preventDefault, wheelOpt); // mobile
+          window.addEventListener(
+            "keydown",
+            preventDefaultForScrollKeys,
+            false
+          );
+        }
+        disableScroll();
+        var controlMode =
+          localStorage.getItem("mc_control_mode") ||
+          (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+            ? "mobile"
+            : "pc");
+
+        function updateMobileControls() {
+          var el = document.getElementById("mobileControls");
+          if (!el) return;
+          el.style.display =
+            controlMode === "mobile" &&
+            (screen === "play" || screen === "inventory")
+              ? "block"
+              : "none";
+
+          var invBtn = el.querySelector('[data-action="inventory"]');
+          if (invBtn) {
+            invBtn.textContent =
+              screen === "inventory" ? "閉じる" : "インベントリ";
+          }
+
+          var openBtn = el.querySelector('[data-action="openBlock"]');
+          if (openBtn) {
+            var target = null;
+            if (screen === "play" && hitBox.pos) {
+              target = world.getBlock(
+                hitBox.pos[0],
+                hitBox.pos[1],
+                hitBox.pos[2]
+              );
+            }
+            openBtn.style.display =
+              screen === "play" &&
+              (target === 76 ||
+                target === 78 ||
+                (target &&
+                  customIds[target] &&
+                  customIds[target].type === "door"))
+                ? "block"
+                : "none";
+          }
+
+          var keyBtns = el.querySelectorAll("[data-key]");
+          keyBtns.forEach(function (b) {
+            b.style.display = screen === "inventory" ? "none" : "";
+          });
+        }
+
+        var buttons = [];
+        var button = function (x, y, w, h) {
+          if (mouseX > x && mouseY > y && mouseX < x + w && mouseY < y + h) {
+            return true;
+          } else {
+            return false;
+          }
+        };
+        var addButton = function (x, y, w, h, text, callback, screen) {
+          buttons.push({
+            x: x,
+            y: y,
+            w: w,
+            h: h,
+            text: text,
+            callback: callback,
+            screen: screen,
+          });
+        };
+        var clickButton = function (button) {
+          if (
+            screen === button.screen &&
+            mouseX > button.x &&
+            mouseY > button.y &&
+            mouseX < button.x + button.w &&
+            mouseY < button.y + button.h
+          ) {
+            button.callback();
+          }
+        };
+        var drawButton = function (button) {
+          if (screen === button.screen) {
+            if (
+              mouseX > button.x &&
+              mouseY > button.y &&
+              mouseX < button.x + button.w &&
+              mouseY < button.y + button.h
+            ) {
+              strokeWeight(3);
+              cursor(HAND);
+            } else {
+              strokeWeight(1);
+            }
+            ctx.strokeStyle = "black";
+            ctx.fillStyle = "rgb(92, 92, 92)";
+            ctx.rect(button.x, button.y, button.w, button.h);
+            ctx.stroke();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.fillStyle = "black";
+            var buttonFontSize = /^モード[:：]/.test(button.text) ? 24 : 35;
+            textSize(buttonFontSize);
+            ctx.font = buttonFontSize + "px Sans-Serif";
+            ctx.textAlign = "center";
+            ctx.fillText(
+              button.text,
+              button.x + button.w / 2,
+              button.y + button.h / 2 + Math.round(buttonFontSize * 0.28)
+            );
+          }
+        };
+        var initEverything;
+        {
+          addButton(
+            width / 2 - 150,
+            160,
+            300,
+            50,
+            "再開",
+            function () {
+              play();
+            },
+            "pause"
+          );
+          addButton(
+            width / 2 - 150,
+            230,
+            300,
+            50,
+            "設定",
+            function () {
+              screen = "settings";
+              releasePointer();
+            },
+            "pause"
+          );
+          addButton(
+            width / 2 - 150,
+            300,
+            300,
+            50,
+            "セーブして終了",
+            function () {
+              saveWorld();
+              if (isMultiplayer && window.__mcMPLeave) {
+                window.__mcMPLeave();
+                setTimeout(function () {
+                  location.href = location.pathname;
+                }, 80);
+              } else {
+                location.href = location.pathname;
+              }
+              releasePointer();
+            },
+            "pause"
+          );
+          addButton(
+            width / 2 - 150,
+            180,
+            300,
+            50,
+            "\ud83d\udda5 \u30d1\u30bd\u30b3\u30f3\u7528",
+            function () {
+              controlMode = "pc";
+              localStorage.setItem("mc_control_mode", "pc");
+              updateMobileControls();
+            },
+            "settings"
+          );
+          addButton(
+            width / 2 - 150,
+            240,
+            300,
+            50,
+            "\ud83d\udcf1 \u30e2\u30d0\u30a4\u30eb\u7528",
+            function () {
+              controlMode = "mobile";
+              localStorage.setItem("mc_control_mode", "mobile");
+              updateMobileControls();
+            },
+            "settings"
+          );
+          addButton(
+            width / 2 - 150,
+            310,
+            300,
+            50,
+            "\u30e2\u30fc\u30c9: \u30b5\u30d0\u30a4\u30d0\u30eb",
+            function () {
+              gameMode = "survival";
+              p.flying = false;
+              updateHUD = true;
+              saveWorld();
+              if (
+                isMultiplayer &&
+                window.__mcMPBridge &&
+                typeof window.__mcMPBridge.localGameModeChanged === "function"
+              ) {
+                window.__mcMPBridge.localGameModeChanged("survival");
+              }
+            },
+            "settings"
+          );
+          addButton(
+            width / 2 - 150,
+            380,
+            300,
+            50,
+            "\u30e2\u30fc\u30c9: \u30af\u30ea\u30a8\u30a4\u30c6\u30a3\u30d6",
+            function () {
+              gameMode = "creative";
+              p.flying = true;
+              updateHUD = true;
+              saveWorld();
+              if (
+                isMultiplayer &&
+                window.__mcMPBridge &&
+                typeof window.__mcMPBridge.localGameModeChanged === "function"
+              ) {
+                window.__mcMPBridge.localGameModeChanged("creative");
+              }
+            },
+            "settings"
+          );
+          addButton(
+            width / 2 - 150,
+            450,
+            300,
+            50,
+            "\u623b\u308b",
+            function () {
+              screen = "pause";
+            },
+            "settings"
+          );
+        } //Buttons
+        function initTextures() {
+          var textureSize = 256;
+          var texturePixels = newUint8Array(textureSize * textureSize * 4);
+          textureMap = {};
+          textureCoords = [];
+          setPixel = function (textureNum, x, y, r, g, b, a) {
+            var texX = textureNum & 15;
+            var texY = textureNum >> 4;
+            var offset = (texY * 16 + y) * 1024 + texX * 64 + x * 4;
+            texturePixels[offset] = r;
+            texturePixels[offset + 1] = g;
+            texturePixels[offset + 2] = b;
+            texturePixels[offset + 3] = a !== undefined ? a : 255;
+          };
+          getPixels = function (str) {
+            proc = this; //Unrelated to this function
+            var w = parseInt(str.substr(0, 2), 36);
+            var h = parseInt(str.substr(2, 2), 36);
+            var ccount = parseInt(str[4], 36);
+            var colors = [];
+            for (var i = 0; i < ccount; i++) {
+              var num = parseInt(str.substr(5 + i * 7, 7), 36);
+              colors.push([
+                (num >>> 24) & 255,
+                (num >>> 16) & 255,
+                (num >>> 8) & 255,
+                num & 255,
+              ]);
+            }
+            var pixels = [];
+            for (var i = 5 + ccount * 7; i < str.length; i++) {
+              var num = parseInt(str[i], 36);
+              pixels.push(
+                colors[num][0],
+                colors[num][1],
+                colors[num][2],
+                colors[num][3]
+              );
+            }
+            return pixels;
+          };
+          (function () {
+            //Specify the texture coords for each index
+            for (var i = 0; i < 256; i++) {
+              var texX = i & 15;
+              var texY = i >> 4;
+              var offsetX = texX * 0.0625;
+              var offsetY = texY * 0.0625;
+              textureCoords.push(
+                newFloat32Array([
+                  0.0625 + offsetX,
+                  offsetY,
+                  offsetX,
+                  offsetY,
+                  offsetX,
+                  0.0625 + offsetY,
+                  0.0625 + offsetX,
+                  0.0625 + offsetY,
+                ])
+              );
+            }
+            //Set all of the textures into 1 big tiled texture
+            var n = 0;
+            for (var i in textures) {
+              if (typeof textures[i] === "function") {
+                textures[i](n);
+              } else if (typeof textures[i] === "string") {
+                var pix = getPixels(textures[i]);
+                for (var j = 0; j < pix.length; j += 4) {
+                  setPixel(
+                    n,
+                    (j >> 2) & 15,
+                    j >> 6,
+                    pix[j],
+                    pix[j + 1],
+                    pix[j + 2],
+                    pix[j + 3]
+                  );
+                }
+              }
+              textureMap[i] = n;
+              n++;
+            }
+            //Set the hitbox texture to 1 pixel
+            for (var i = 0; i < 8; i += 2) {
+              textureCoords[textureMap.hitbox][i] =
+                textureCoords[textureMap.hitbox][2] + 0.01;
+              textureCoords[textureMap.hitbox][i + 1] =
+                textureCoords[textureMap.hitbox][1] + 0.01;
+            }
+          })();
+          tex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            textureSize,
+            textureSize,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            texturePixels
+          );
+          gl.generateMipmap(gl.TEXTURE_2D);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.uniform1i(glCache.locations.uSampler, 0);
+          genIcons();
+        }
+
+        function drawIcon(x, y, id) {
+          x = x / (3 * height) - (0.1666 * width) / height;
+          y = y / (3 * height) - 0.1666;
+          initModelView(x, y, 0, 0, 0);
+          var buffer = blockIcons[id];
+          gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+          gl.vertexAttribPointer(
+            glCache.locations.aVertex,
+            3,
+            gl.FLOAT,
+            false,
+            24,
+            0
+          );
+          gl.vertexAttribPointer(
+            glCache.locations.aTexture,
+            2,
+            gl.FLOAT,
+            false,
+            24,
+            12
+          );
+          gl.vertexAttribPointer(
+            glCache.locations.aShadow,
+            1,
+            gl.FLOAT,
+            false,
+            24,
+            20
+          );
+          gl.drawElements(
+            gl.TRIANGLES,
+            blockIconCounts[id] || 18,
+            gl.UNSIGNED_INT,
+            0
+          );
+        }
+
+        function hotbar() {
+          var before = currentFov;
+          FOV(90);
+          for (var i = 0; i < inventory.hotbar.length; i++) {
+            if (inventory.hotbar[i]) {
+              var x =
+                width / 2 -
+                (inventory.hotbar.length / 2) * inventory.size +
+                (i + 0.5) * inventory.size +
+                25;
+              var y = height - inventory.size;
+              drawIcon(x, y, inventory.hotbar[i]);
+              if (gameMode === "survival") {
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 12px Sans-Serif";
+                ctx.textAlign = "right";
+                ctx.fillText(
+                  String(inventory.hotbarCounts[i] || 0),
+                  x + inventory.size / 2,
+                  y + inventory.size / 2
+                );
+                ctx.textAlign = "left";
+              }
+            }
+          }
+          FOV(before);
+        }
+
+        function projectWorldPoint(wx, wy, wz) {
+          // ドロップ描画後にmodelViewが変わっても、必ずカメラ基準で投影する
+          var mv = cameraModelView;
+          var v0 = mv[0] * wx + mv[1] * wy + mv[2] * wz + mv[3];
+          var v1 = mv[4] * wx + mv[5] * wy + mv[6] * wz + mv[7];
+          var v2 = mv[8] * wx + mv[9] * wy + mv[10] * wz + mv[11];
+          var v3 = mv[12] * wx + mv[13] * wy + mv[14] * wz + mv[15];
+          var c0 = projection[0] * v0;
+          var c1 = projection[5] * v1;
+          var c3 = projection[11] * v2;
+          if (!isFinite(c3) || c3 === 0) return null;
+          return {
+            x: width / 2 + ((c0 / c3) * width) / 2,
+            y: height / 2 - ((c1 / c3) * height) / 2,
+            depth: c3,
+          };
+        }
+        function hud() {
+          var s = inventory.size;
+          var x = width / 2 + 0.5;
+          var y = height / 2 + 0.5;
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = "white";
+          ctx.beginPath();
+          ctx.moveTo(x - 10, y);
+          ctx.lineTo(x + 10, y);
+          ctx.moveTo(x, y - 10);
+          ctx.lineTo(x, y + 10);
+          ctx.stroke();
+          if (gameMode === "survival") {
+            // ブロックの表面中央に、段階的なひびを貼り付けるように表示
+            if (
+              breakState.key &&
+              breakState.start &&
+              hitBox.pos &&
+              hitBox.face
+            ) {
+              var breakId = world.getBlock(
+                hitBox.pos[0],
+                hitBox.pos[1],
+                hitBox.pos[2]
+              );
+              var breakMs = blockBreakDuration(breakId) * 1000;
+              var bp = Math.max(
+                0,
+                Math.min(
+                  1,
+                  (Date.now() - breakState.start) / Math.max(1, breakMs)
+                )
+              );
+              if (
+                survivalHudImages.cracks.complete &&
+                survivalHudImages.cracks.naturalWidth
+              ) {
+                var crackStage = Math.min(9, Math.floor(bp * 10));
+                var bx = hitBox.pos[0],
+                  by = hitBox.pos[1],
+                  bz = hitBox.pos[2];
+                var cx = bx,
+                  cy = by,
+                  cz = bz,
+                  ux = 0.45,
+                  uy = 0,
+                  uz = 0;
+                var face = hitBox.face;
+                // 面の中央からほんの少し外側へ出して、ブロック表面に貼り付いて見せる
+                if (face === "top") {
+                  cy += 0.505;
+                  ux = 0.45;
+                  uz = 0;
+                } else if (face === "bottom") {
+                  cy -= 0.505;
+                  ux = 0.45;
+                  uz = 0;
+                } else if (face === "east") {
+                  cx += 0.505;
+                  ux = 0;
+                  uz = 0.45;
+                } else if (face === "west") {
+                  cx -= 0.505;
+                  ux = 0;
+                  uz = 0.45;
+                } else if (face === "south") {
+                  cz += 0.505;
+                  ux = 0.45;
+                  uz = 0;
+                } else {
+                  cz -= 0.505;
+                  ux = 0.45;
+                  uz = 0;
+                }
+                var crackCenter = projectWorldPoint(cx, cy, cz);
+                var crackEdge = projectWorldPoint(cx + ux, cy + uy, cz + uz);
+                if (
+                  crackCenter &&
+                  crackEdge &&
+                  crackCenter.depth > 0 &&
+                  crackEdge.depth > 0
+                ) {
+                  var crackSize = Math.max(
+                    14,
+                    Math.min(
+                      180,
+                      Math.hypot(
+                        crackEdge.x - crackCenter.x,
+                        crackEdge.y - crackCenter.y
+                      ) * 1.75
+                    )
+                  );
+                  ctx.imageSmoothingEnabled = false;
+                  ctx.drawImage(
+                    survivalHudImages.cracks,
+                    crackStage * 64,
+                    0,
+                    64,
+                    64,
+                    crackCenter.x - crackSize / 2,
+                    crackCenter.y - crackSize / 2,
+                    crackSize,
+                    crackSize
+                  );
+                  ctx.imageSmoothingEnabled = true;
+                }
+              }
+            }
+
+            // 画像式HP・満腹ゲージ。ホットバーの直上に表示
+            var iconSize = Math.max(
+              16,
+              Math.min(22, Math.round(inventory.size * 0.52))
+            );
+            var groupW = iconSize * 10;
+            var gap = Math.max(8, Math.round(iconSize * 0.55));
+            var totalW = groupW * 2 + gap;
+            var hudX = width / 2 - totalW / 2 + 25;
+            var hudY = height - inventory.size * 1.5 - iconSize - 5;
+
+            drawSurvivalIconStrip(
+              survivalHudImages.heartFull,
+              survivalHudImages.heartEmpty,
+              p.health,
+              hudX,
+              hudY,
+              10,
+              iconSize
+            );
+            drawSurvivalIconStrip(
+              survivalHudImages.foodFull,
+              survivalHudImages.foodEmpty,
+              p.hunger,
+              hudX + groupW + gap,
+              hudY,
+              10,
+              iconSize
+            );
+          }
+          //Hotbar
+          x = width / 2 - (9 / 2) * s + 0.5 + 25;
+          y = height - s * 1.5 + 0.5;
+          ctx.strokeStyle = "black";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + s * 9, y);
+          ctx.moveTo(x, y + s);
+          ctx.lineTo(x + s * 9, y + s);
+          for (var i = 0; i <= 9; i++) {
+            ctx.moveTo(x + i * s, y);
+            ctx.lineTo(x + i * s, y + s);
+          }
+          ctx.stroke();
+          ctx.strokeStyle = "white";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.strokeRect(
+            width / 2 - (9 / 2) * s + inventory.hotbarSlot * s + 25,
+            height - s * 1.5,
+            s,
+            s
+          );
+          var str =
+            "Average Frame Time: " +
+            analytics.displayedFrameTime +
+            "ms\n" +
+            "Worst Frame Time: " +
+            analytics.displayedwFrameTime +
+            "ms\n" +
+            "Render Time: " +
+            analytics.displayedRenderTime +
+            "ms\n" +
+            "Tick Time: " +
+            analytics.displayedTickTime +
+            "ms\n" +
+            "Rendered Chunks: " +
+            renderedChunks.toLocaleString() +
+            " / " +
+            world.loaded.length +
+            "\n" +
+            "Generated Chunks: " +
+            generatedChunks.toLocaleString() +
+            "\n" +
+            "FPS: " +
+            analytics.fps;
+          if (p.autoBreak) {
+            fastText("Super breaker enabled", 5, height - 89, 12);
+          }
+          ctx.textAlign = "right";
+          fastText(p2.x + ", " + p2.y + ", " + p2.z, width - 10, 15, 0);
+          ctx.textAlign = "left";
+          fastText(str, 5, height - 77, 12);
+          if (typeof drawMobHudOverlays === "function") drawMobHudOverlays();
+        }
+
+        var invView = "main";
+        function padMain() {
+          while (inventory.main.length < 27) inventory.main.push(0);
+        }
+
+        // クラフト & 精錬データ
+        var craftTableGrid = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+        var craftTableCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+        var playerCraftGrid = [0, 0, 0, 0];
+        var playerCraftCounts = [0, 0, 0, 0];
+        var furnaceData = {
+          input: 0,
+          inputCount: 0,
+          fuel: 0,
+          fuelCount: 0,
+          result: 0,
+          resultCount: 0,
+          cookTime: 0,
+          maxCookTime: 80,
+          fuelTime: 0,
+          maxFuelTime: 200,
+          lastTick: Date.now(),
+        };
+
+        function returnItemToInv(item, count) {
+          if (!item) return 0;
+          count = count || 1;
+          // まず既存のスタックに統合する（最大64）
+          for (var i = 0; i < inventory.hotbar.length && count > 0; i++) {
+            if (
+              inventory.hotbar[i] === item &&
+              (inventory.hotbarCounts[i] || 0) < MAX_STACK
+            ) {
+              var n = Math.min(
+                count,
+                MAX_STACK - (inventory.hotbarCounts[i] || 0)
+              );
+              inventory.hotbarCounts[i] = (inventory.hotbarCounts[i] || 0) + n;
+              count -= n;
+            }
+          }
+          for (var j = 0; j < inventory.main.length && count > 0; j++) {
+            if (
+              inventory.main[j] === item &&
+              (inventory.mainCounts[j] || 0) < MAX_STACK
+            ) {
+              var n2 = Math.min(
+                count,
+                MAX_STACK - (inventory.mainCounts[j] || 0)
+              );
+              inventory.mainCounts[j] = (inventory.mainCounts[j] || 0) + n2;
+              count -= n2;
+            }
+          }
+          // 空きスロットへ（64個ずつスタックして格納）
+          for (var k2 = 0; k2 < inventory.hotbar.length && count > 0; k2++) {
+            if (!inventory.hotbar[k2]) {
+              var n3 = Math.min(count, MAX_STACK);
+              inventory.hotbar[k2] = item;
+              inventory.hotbarCounts[k2] = n3;
+              count -= n3;
+            }
+          }
+          for (var m2 = 0; m2 < inventory.main.length && count > 0; m2++) {
+            if (!inventory.main[m2]) {
+              var n4 = Math.min(count, MAX_STACK);
+              inventory.main[m2] = item;
+              inventory.mainCounts[m2] = n4;
+              count -= n4;
+            }
+          }
+          updateHUD = true;
+          return count; // 収まりきらなかった残数
+        }
+
+        function returnCraftingItems() {
+          for (var i = 0; i < craftTableGrid.length; i++) {
+            if (craftTableGrid[i]) {
+              var left1 = returnItemToInv(
+                craftTableGrid[i],
+                craftTableCounts[i] || 1
+              );
+              if (left1 > 0) {
+                craftTableCounts[i] = left1;
+              } else {
+                craftTableGrid[i] = 0;
+                craftTableCounts[i] = 0;
+              }
+            }
+          }
+          for (var j = 0; j < playerCraftGrid.length; j++) {
+            if (playerCraftGrid[j]) {
+              var left2 = returnItemToInv(
+                playerCraftGrid[j],
+                playerCraftCounts[j] || 1
+              );
+              if (left2 > 0) {
+                playerCraftCounts[j] = left2;
+              } else {
+                playerCraftGrid[j] = 0;
+                playerCraftCounts[j] = 0;
+              }
+            }
+          }
+        }
+
+        function calcCraftResult(grid, size) {
+          // このゲームに実際に存在するブロックだけで、Minecraftの基本レシピを判定する。
+          // 戻り値は { id, count }。結果欄には個数文字を表示しない。
+          var occupied = 0;
+          for (var i = 0; i < grid.length; i++) {
+            if (grid[i]) occupied++;
+          }
+          if (occupied === 0) return null;
+
+          // 実際のblockDataのID
+          var LOG_TO_PLANK = {
+            31: 30, // oak log -> oak planks
+            33: 32, // acacia log -> acacia planks
+            35: 34, // birch log -> birch planks
+            37: 36, // dark oak log -> dark oak planks
+            39: 38, // jungle log -> jungle planks
+            41: 40, // spruce log -> spruce planks
+          };
+          var WOOD = {
+            30: { stairs: 91, slab: 92, door: 93 },
+            32: { stairs: 94, slab: 95, door: 96 },
+            34: { stairs: 97, slab: 98, door: 99 },
+            36: { stairs: 106, slab: 107, door: 108 },
+            38: { stairs: 100, slab: 101, door: 102 },
+            40: { stairs: 103, slab: 104, door: 105 },
+          };
+
+          // 原木1個 -> 対応する木材4個（2x2/3x3どちらでも可）
+          if (occupied === 1) {
+            for (var li = 0; li < grid.length; li++) {
+              if (LOG_TO_PLANK[grid[li]]) {
+                return { id: LOG_TO_PLANK[grid[li]], count: 4 };
+              }
+            }
+          }
+
+          // 2x2クラフト
+          if (size === 2) {
+            // 木材4個 -> 作業台1個
+            if (occupied === 4) {
+              var first = grid[0];
+              if (
+                WOOD[first] &&
+                grid[1] === first &&
+                grid[2] === first &&
+                grid[3] === first
+              ) {
+                return { id: 78, count: 1 };
+              }
+              // 石4個 -> 石レンガ4個
+              if (
+                grid[0] === 4 &&
+                grid[1] === 4 &&
+                grid[2] === 4 &&
+                grid[3] === 4
+              ) {
+                return { id: 12, count: 4 };
+              }
+            }
+            return null;
+          }
+
+          if (size !== 3) return null;
+
+          // 3x3内の2x2レシピ。作業台で2x2をどこに置いても作れる。
+          function match2x2(itemId) {
+            for (var rr = 0; rr < 2; rr++) {
+              for (var cc = 0; cc < 2; cc++) {
+                var cells = [
+                  rr * 3 + cc,
+                  rr * 3 + cc + 1,
+                  (rr + 1) * 3 + cc,
+                  (rr + 1) * 3 + cc + 1,
+                ];
+                var ok = true;
+                for (var qi = 0; qi < 9; qi++) {
+                  var inside = cells.indexOf(qi) !== -1;
+                  if (inside) {
+                    if (grid[qi] !== itemId) {
+                      ok = false;
+                      break;
+                    }
+                  } else if (grid[qi]) {
+                    ok = false;
+                    break;
+                  }
+                }
+                if (ok) return true;
+              }
+            }
+            return false;
+          }
+
+          // 木材4個 -> 作業台1個
+          for (var woodId in WOOD) {
+            if (match2x2(Number(woodId))) return { id: 78, count: 1 };
+          }
+
+          // 石4個 -> 石レンガ4個
+          if (match2x2(4)) return { id: 12, count: 4 };
+
+          // 丸石8個 + 中央空き -> かまど1個
+          if (grid[4] === 0) {
+            var furnaceOk = true;
+            for (var fi = 0; fi < 9; fi++) {
+              if (fi !== 4 && grid[fi] !== 10) {
+                furnaceOk = false;
+                break;
+              }
+            }
+            if (furnaceOk) return { id: 80, count: 1 };
+          }
+
+          // 3x3レシピは、指定した形以外のスロットがすべて空であることを確認する。
+          function matchMask(mask, itemId) {
+            for (var mi = 0; mi < 9; mi++) {
+              if (mask[mi]) {
+                if (grid[mi] !== itemId) return false;
+              } else if (grid[mi]) {
+                return false;
+              }
+            }
+            return true;
+          }
+
+          // 階段：3 + 2 + 1 = 6個 -> 4個
+          var stairMasks = [
+            [1, 1, 1, 1, 1, 0, 1, 0, 0],
+            [1, 1, 1, 0, 1, 1, 0, 0, 1],
+          ];
+          // ハーフブロック：横一列3個 -> 6個
+          var slabMasks = [
+            [1, 1, 1, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 1, 1, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 1, 1, 1],
+          ];
+          // ドア：2列×3段 = 6個 -> 3個
+          var doorMasks = [
+            [1, 1, 0, 1, 1, 0, 1, 1, 0],
+            [0, 1, 1, 0, 1, 1, 0, 1, 1],
+          ];
+
+          for (var wid in WOOD) {
+            var wId = Number(wid);
+            for (var sm = 0; sm < stairMasks.length; sm++) {
+              if (matchMask(stairMasks[sm], wId)) {
+                return { id: WOOD[wid].stairs, count: 4 };
+              }
+            }
+            for (var hm = 0; hm < slabMasks.length; hm++) {
+              if (matchMask(slabMasks[hm], wId)) {
+                return { id: WOOD[wid].slab, count: 6 };
+              }
+            }
+            for (var dm = 0; dm < doorMasks.length; dm++) {
+              if (matchMask(doorMasks[dm], wId)) {
+                return { id: WOOD[wid].door, count: 3 };
+              }
+            }
+          }
+
+          return null;
+        }
+
+        function consumeCraftGrid(grid, counts) {
+          for (var i = 0; i < grid.length; i++) {
+            if (grid[i]) {
+              // クラフト1回につき各スロットから1個だけ消費する
+              var left2 = counts && counts[i] ? counts[i] - 1 : 0;
+              if (left2 > 0) {
+                counts[i] = left2;
+              } else {
+                grid[i] = 0;
+                if (counts) counts[i] = 0;
+              }
+            }
+          }
+        }
+
+        // インベントリ回りの共通操作：スロットと手持ちアイテムを「数値込み」で入れ替える。
+        // 同じアイテム同士なら最大64までスタックを統合する。
+        function mergePick(slotGet, slotSet) {
+          var s = slotGet();
+          var sId = s.id || 0;
+          var sCnt = sId ? Math.min(MAX_STACK, s.count || 1) : 0;
+          var hId = inventory.holding || 0;
+          var hCnt = hId ? Math.min(MAX_STACK, inventory.holdingCount || 1) : 0;
+          if (hId && sId === hId) {
+            // スロット側へ統合できる場合は統合する
+            if (sCnt < MAX_STACK) {
+              var mv = Math.min(hCnt, MAX_STACK - sCnt);
+              sCnt += mv;
+              hCnt -= mv;
+              slotSet(sId, sCnt);
+              inventory.holding = hCnt > 0 ? hId : 0;
+              inventory.holdingCount = hCnt > 0 ? hCnt : 0;
+              updateHUD = true;
+              return;
+            }
+            // スロットが満杯なら手持ち側へ統合する
+            if (hCnt < MAX_STACK) {
+              var mv2 = Math.min(sCnt, MAX_STACK - hCnt);
+              hCnt += mv2;
+              sCnt -= mv2;
+              slotSet(sCnt > 0 ? sId : 0, sCnt > 0 ? sCnt : 0);
+              inventory.holding = hId;
+              inventory.holdingCount = hCnt;
+              updateHUD = true;
+              return;
+            }
+          }
+          // 異なるアイテム（または両方満杯）なら入れ替える
+          slotSet(hId, hCnt);
+          inventory.holding = sId;
+          inventory.holdingCount = sCnt;
+          updateHUD = true;
+        }
+
+        function getSmeltResult(inputId) {
+          if (inputId === 9) return 3; // 丸石 -> 石
+          if (inputId === 15) return 22; // 鉄鉱石 -> 鉄ブロック
+          if (inputId === 16) return 23; // 金鉱石 -> 金ブロック
+          if (inputId === 17) return 24; // ダイヤ鉱石 -> ダイヤブロック
+          if (inputId === 5) return 8; // 砂 -> ガラス
+          if (inputId === 86) return 87; // 粘土 -> テラコッタ
+          if (inputId === 75) return 13; // 暗黒石 -> レンガ
+          if (inputId >= 29 && inputId <= 39 && inputId % 2 === 1) return 21; // 原木 -> 石炭ブロック
+          return 0;
+        }
+
+        function getFuelPower(fuelId) {
+          if (fuelId === 21) return 600; // 石炭ブロック
+          if (fuelId >= 28 && fuelId <= 39) return 250; // 木材/原木
+          if (fuelId === 76 || fuelId === 77) return 250; // 作業台/本棚
+          return 0;
+        }
+
+        function updateFurnace() {
+          var now = Date.now();
+          var dt = Math.min(10, Math.floor((now - furnaceData.lastTick) / 16));
+          furnaceData.lastTick = now;
+          if (dt <= 0) return;
+
+          var resultItem = getSmeltResult(furnaceData.input);
+          if (
+            resultItem &&
+            (!furnaceData.result || furnaceData.result === resultItem)
+          ) {
+            if (furnaceData.fuelTime <= 0) {
+              var pwr = getFuelPower(furnaceData.fuel);
+              if (pwr > 0) {
+                var leftFuel = (furnaceData.fuelCount || 1) - 1;
+                if (leftFuel > 0) {
+                  furnaceData.fuelCount = leftFuel;
+                } else {
+                  furnaceData.fuel = 0;
+                  furnaceData.fuelCount = 0;
+                }
+                furnaceData.fuelTime = pwr;
+                furnaceData.maxFuelTime = pwr;
+              }
+            }
+            if (furnaceData.fuelTime > 0) {
+              furnaceData.fuelTime = Math.max(0, furnaceData.fuelTime - dt);
+              furnaceData.cookTime += dt;
+              if (furnaceData.cookTime >= furnaceData.maxCookTime) {
+                furnaceData.cookTime = 0;
+                var leftInput = (furnaceData.inputCount || 1) - 1;
+                if (leftInput > 0) {
+                  furnaceData.inputCount = leftInput;
+                } else {
+                  furnaceData.input = 0;
+                  furnaceData.inputCount = 0;
+                }
+                if (furnaceData.result === resultItem) {
+                  furnaceData.resultCount = (furnaceData.resultCount || 1) + 1;
+                } else {
+                  furnaceData.result = resultItem;
+                  furnaceData.resultCount = 1;
+                }
+              }
+            } else {
+              if (furnaceData.cookTime > 0)
+                furnaceData.cookTime = Math.max(0, furnaceData.cookTime - dt);
+            }
+          } else {
+            furnaceData.cookTime = 0;
+            if (furnaceData.fuelTime > 0)
+              furnaceData.fuelTime = Math.max(0, furnaceData.fuelTime - dt);
+          }
+        }
+
+        function drawInv() {
+          if (invView === "list") drawInvList();
+          else if (invView === "craftingTable") drawInvCraftingTable();
+          else if (invView === "furnace") drawInvFurnace();
+          else drawInvMain();
+        }
+
+        function clickInv() {
+          if (invView === "list") clickInvList();
+          else if (invView === "craftingTable") clickInvCraftingTable();
+          else if (invView === "furnace") clickInvFurnace();
+          else clickInvMain();
+        }
+
+        function drawInvList() {
+          var x = 0;
+          var y = 0;
+          var s = inventory.size;
+          var s2 = s / 2;
+          var before = currentFov;
+          var perRow = 13;
+          var totalBlocks = blockData.length - 1;
+          var numRows = Math.ceil(totalBlocks / perRow);
+          var gridStartX = 50 - s2;
+          var gridStartY = 50 - s2;
+
+          //I don't know why, but this is barely transparent, so the gray bleeds through
+          gl.clearColor(0.5, 0.5, 0.5, 0.0);
+          gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+          ctx.fillStyle = "rgb(30, 30, 30)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          FOV(90);
+          // Draw the grid
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = "black";
+          ctx.beginPath();
+          for (y = 0; y <= numRows; y++) {
+            ctx.moveTo(gridStartX + 0.5, gridStartY + 0.5 + y * s);
+            ctx.lineTo(gridStartX + 0.5 + s * perRow, gridStartY + 0.5 + y * s);
+          }
+          for (x = 0; x <= perRow; x++) {
+            ctx.moveTo(gridStartX + 0.5 + s * x, gridStartY + 0.5);
+            ctx.lineTo(
+              gridStartX + 0.5 + s * x,
+              gridStartY + 0.5 + numRows * s
+            );
+          }
+          // Hotbar
+          var hotX = width / 2 - (inventory.hotbar.length / 2) * s + 0.5 + 25;
+          var hotY = height - s * 1.5 + 0.5;
+          ctx.moveTo(hotX, hotY);
+          ctx.lineTo(hotX + s * 9, hotY);
+          ctx.moveTo(hotX, hotY + s);
+          ctx.lineTo(hotX + s * 9, hotY + s);
+          for (var i = 0; i <= inventory.hotbar.length; i++) {
+            ctx.moveTo(hotX + i * s, hotY);
+            ctx.lineTo(hotX + i * s, hotY + s);
+          }
+          ctx.stroke();
+
+          // Hotbar highlight
+          if (
+            mouseX >= hotX &&
+            mouseX < hotX + 9 * s &&
+            mouseY >= hotY &&
+            mouseY < hotY + s
+          ) {
+            var overHot = Math.floor((mouseX - hotX) / s);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "white";
+            ctx.beginPath();
+            ctx.strokeRect(hotX + s * overHot, hotY, s, s);
+          }
+          // Box highlight in inv
+          var col = Math.floor((mouseX - gridStartX) / s);
+          var row = Math.floor((mouseY - gridStartY) / s);
+          if (col >= 0 && col < perRow && row >= 0 && row < numRows) {
+            var overInv = row * perRow + col;
+            if (overInv < totalBlocks) {
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = "white";
+              ctx.beginPath();
+              ctx.strokeRect(gridStartX + col * s, gridStartY + row * s, s, s);
+            }
+          }
+          if (inventory.holding) {
+            drawIcon(mouseX, mouseY, inventory.holding);
+          }
+          for (var i = 1; i < blockData.length; i++) {
+            x = ((i - 1) % perRow) * s + 50;
+            y = (((i - 1) / perRow) | 0) * s + 50;
+            drawIcon(x, y, i);
+          }
+          // インベントリに戻るボタン
+          var bbx1 = width - 260,
+            bby1 = 12,
+            bbw1 = 120,
+            bbh1 = 32;
+          ctx.fillStyle = "#4B892F";
+          ctx.fillRect(bbx1, bby1, bbw1, bbh1);
+          ctx.strokeStyle = "#2F5F1F";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bbx1, bby1, bbw1, bbh1);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "14px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("インベントリ", bbx1 + bbw1 / 2, bby1 + bbh1 / 2);
+
+          // ゲームに戻る（閉じる）ボタン
+          var bbx2 = width - 130,
+            bby2 = 12,
+            bbw2 = 120,
+            bbh2 = 32;
+          ctx.fillStyle = "#D9534F";
+          ctx.fillRect(bbx2, bby2, bbw2, bbh2);
+          ctx.strokeStyle = "#843534";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bbx2, bby2, bbw2, bbh2);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillText("閉じる (✕)", bbx2 + bbw2 / 2, bby2 + bbh2 / 2);
+          ctx.textBaseline = "alphabetic";
+          hotbar();
+          //hud();
+          ctx.drawImage(gl.canvas, 0, 0);
+          FOV(before);
+        }
+
+        function drawInvMain() {
+          padMain();
+
+          // 最初に送ってくれたHTMLの334×319を基準にする
+          var BASE_W = 334;
+          var BASE_H = 319;
+
+          var scale = Math.min(width / BASE_W, height / BASE_H);
+          var ox = (width - BASE_W * scale) / 2;
+          var oy = (height - BASE_H * scale) / 2;
+
+          var before = currentFov;
+
+          // WebGL側を透明にする
+          gl.clearColor(0.5, 0.5, 0.5, 0.0);
+          gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+
+          // Canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Minecraftの暗い背景
+          ctx.fillStyle = "rgb(30, 30, 30)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // --------------------------------------------------
+          // ここから334×319の「きれいなインベントリ」
+          // --------------------------------------------------
+
+          ctx.save();
+
+          ctx.translate(ox, oy);
+          ctx.scale(scale, scale);
+
+          // 全体
+          ctx.fillStyle = "#C6C6C6";
+          ctx.fillRect(0, 0, BASE_W, BASE_H);
+
+          // 全体の立体感
+          ctx.fillStyle = "#EEEEEE";
+          ctx.fillRect(0, 0, BASE_W, 3);
+          ctx.fillRect(0, 0, 3, BASE_H);
+
+          ctx.fillStyle = "#777777";
+          ctx.fillRect(0, BASE_H - 3, BASE_W, 3);
+          ctx.fillRect(BASE_W - 3, 0, 3, BASE_H);
+
+          // 閉じる「×」ボタン
+          var closeBtnX = BASE_W - 26,
+            closeBtnY = 6,
+            closeBtnW = 20,
+            closeBtnH = 20;
+          ctx.fillStyle = "#D9534F";
+          ctx.fillRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+          ctx.strokeStyle = "#843534";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(closeBtnX + 5, closeBtnY + 5);
+          ctx.lineTo(closeBtnX + closeBtnW - 5, closeBtnY + closeBtnH - 5);
+          ctx.moveTo(closeBtnX + closeBtnW - 5, closeBtnY + 5);
+          ctx.lineTo(closeBtnX + 5, closeBtnY + closeBtnH - 5);
+          ctx.stroke();
+
+          // --------------------------------------------------
+          // スロット描画
+          // --------------------------------------------------
+
+          function slot(x, y, w, h) {
+            ctx.fillStyle = "#999999";
+            ctx.fillRect(x, y, w, h);
+
+            // 明るい上・左
+            ctx.fillStyle = "#EEEEEE";
+            ctx.fillRect(x, y, w, 2);
+            ctx.fillRect(x, y, 2, h);
+
+            // 暗い下・右
+            ctx.fillStyle = "#666666";
+            ctx.fillRect(x, y + h - 2, w, 2);
+            ctx.fillRect(x + w - 2, y, 2, h);
+
+            // 内側
+            ctx.strokeStyle = "#777777";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+          }
+
+          // --------------------------------------------------
+          // 防具スロット
+          // --------------------------------------------------
+
+          var armorX = 13;
+          var armorY = 9;
+
+          for (var a = 0; a < 4; a++) {
+            slot(armorX, armorY + a * 35, 33, 33);
+          }
+
+          // ヘルメット
+          ctx.strokeStyle = "#666666";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(19, 16, 19, 14);
+          ctx.fillStyle = "#666666";
+          ctx.fillRect(21, 27, 15, 3);
+
+          // チェストプレート
+          ctx.strokeStyle = "#777777";
+          ctx.strokeRect(19, 50, 17, 19);
+          ctx.fillStyle = "#AAAAAA";
+          ctx.fillRect(26, 50, 4, 7);
+
+          // レギンス
+          ctx.strokeStyle = "#777777";
+          ctx.strokeRect(20, 87, 6, 20);
+          ctx.strokeRect(29, 87, 6, 20);
+
+          // ブーツ
+          ctx.strokeStyle = "#777777";
+          ctx.strokeRect(19, 117, 7, 11);
+          ctx.strokeRect(29, 117, 7, 11);
+
+          // --------------------------------------------------
+          // プレイヤー表示
+          // --------------------------------------------------
+
+          var px = 48;
+          var py = 9;
+          var pw = 97;
+          var ph = 140;
+
+          ctx.fillStyle = "#000000";
+          ctx.fillRect(px, py, pw, ph);
+
+          ctx.strokeStyle = "#777777";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px, py, pw, ph);
+
+          // Steve
+          var sx = 69;
+          var sy = 29;
+
+          // 頭
+          ctx.fillStyle = "#8B4D32";
+          ctx.fillRect(sx + 14, sy, 25, 28);
+
+          // 髪
+          ctx.fillStyle = "#35241E";
+          ctx.fillRect(sx + 14, sy, 25, 7);
+
+          // 顔の影
+          ctx.fillStyle = "#6F3929";
+          ctx.fillRect(sx + 14, sy + 21, 25, 7);
+
+          // 目
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(sx + 19, sy + 12, 5, 4);
+          ctx.fillRect(sx + 30, sy + 12, 5, 4);
+
+          ctx.fillStyle = "#222222";
+          ctx.fillRect(sx + 22, sy + 12, 2, 4);
+          ctx.fillRect(sx + 33, sy + 12, 2, 4);
+
+          // 鼻
+          ctx.fillStyle = "#75422E";
+          ctx.fillRect(sx + 25, sy + 16, 4, 3);
+
+          // 口
+          ctx.fillStyle = "#522B24";
+          ctx.fillRect(sx + 22, sy + 22, 9, 3);
+
+          // 胴体
+          ctx.fillStyle = "#008C8C";
+          ctx.fillRect(sx + 11, sy + 28, 32, 38);
+
+          // 腕
+          ctx.fillStyle = "#98583A";
+          ctx.fillRect(sx, sy + 29, 11, 34);
+          ctx.fillRect(sx + 43, sy + 29, 11, 34);
+
+          // 腕の服
+          ctx.fillStyle = "#008C8C";
+          ctx.fillRect(sx, sy + 29, 11, 13);
+          ctx.fillRect(sx + 43, sy + 29, 11, 13);
+
+          // ズボン
+          ctx.fillStyle = "#302B87";
+          ctx.fillRect(sx + 12, sy + 66, 30, 22);
+
+          // 足
+          ctx.fillRect(sx + 12, sy + 84, 14, 25);
+          ctx.fillRect(sx + 28, sy + 84, 14, 25);
+
+          // 靴
+          ctx.fillStyle = "#202060";
+          ctx.fillRect(sx + 11, sy + 104, 16, 5);
+          ctx.fillRect(sx + 27, sy + 104, 16, 5);
+
+          // --------------------------------------------------
+          // クラフト
+          // --------------------------------------------------
+
+          ctx.fillStyle = "#555555";
+          ctx.font = "15px Arial";
+          ctx.textAlign = "left";
+          ctx.fillText("クラフト", 185, 17);
+
+          // 2×2クラフト
+          for (var cr = 0; cr < 2; cr++) {
+            for (var cc = 0; cc < 2; cc++) {
+              slot(185 + cc * 35, 29 + cr * 35, 34, 34);
+            }
+          }
+
+          // 矢印
+          ctx.fillStyle = "#999999";
+          ctx.fillRect(257, 55, 20, 6);
+
+          ctx.beginPath();
+          ctx.moveTo(277, 48);
+          ctx.lineTo(289, 58);
+          ctx.lineTo(277, 68);
+          ctx.closePath();
+          ctx.fill();
+
+          // 結果
+          slot(293, 48, 34, 34);
+
+          // --------------------------------------------------
+          // シールド
+          // --------------------------------------------------
+
+          slot(145, 113, 35, 35);
+
+          ctx.strokeStyle = "#777777";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(153, 119);
+          ctx.lineTo(171, 119);
+          ctx.lineTo(171, 132);
+          ctx.quadraticCurveTo(162, 141, 153, 132);
+          ctx.closePath();
+          ctx.stroke();
+
+          // --------------------------------------------------
+          // レシピブック
+          // --------------------------------------------------
+
+          ctx.fillStyle = "#EEEEEE";
+          ctx.fillRect(199, 113, 38, 35);
+
+          ctx.strokeStyle = "#222222";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(199, 113, 38, 35);
+
+          ctx.fillStyle = "#3B9B55";
+          ctx.fillRect(205, 118, 24, 20);
+
+          ctx.strokeStyle = "#222222";
+          ctx.strokeRect(205, 118, 24, 20);
+
+          ctx.strokeStyle = "#CDE7C7";
+          ctx.beginPath();
+          ctx.moveTo(208, 125);
+          ctx.lineTo(226, 125);
+          ctx.moveTo(208, 131);
+          ctx.lineTo(226, 131);
+          ctx.stroke();
+
+          // --------------------------------------------------
+          // メインインベントリ 3×9
+          // --------------------------------------------------
+
+          var invX = 12;
+          var invY = 155;
+          var slotSize = 34;
+          var gap = 1;
+
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 9; c++) {
+              var ix = invX + c * (slotSize + gap);
+              var iy = invY + r * (slotSize + gap);
+
+              slot(ix, iy, slotSize, slotSize);
+            }
+          }
+
+          // --------------------------------------------------
+          // ホットバー
+          // --------------------------------------------------
+
+          var hotX = 12;
+          var hotY = 267;
+
+          for (var hc = 0; hc < 9; hc++) {
+            slot(hotX + hc * (slotSize + gap), hotY, slotSize, slotSize);
+          }
+
+          ctx.restore();
+
+          // --------------------------------------------------
+          // アイテムを描画
+          // --------------------------------------------------
+
+          // WebGLアイコンを描画するためにFOVを変更
+          FOV(90);
+
+          // 2x2 クラフトスロットアイテム
+          for (var cr2 = 0; cr2 < 2; cr2++) {
+            for (var cc2 = 0; cc2 < 2; cc2++) {
+              var pId = playerCraftGrid[cr2 * 2 + cc2];
+              if (pId) {
+                var clx = 185 + cc2 * 35 + 17;
+                var cly = 29 + cr2 * 35 + 17;
+                drawIcon(ox + clx * scale, oy + cly * scale, pId);
+                if (
+                  gameMode === "survival" &&
+                  (playerCraftCounts[cr2 * 2 + cc2] || 0) > 1
+                ) {
+                  ctx.fillStyle = "#fff";
+                  ctx.font = "bold 11px Sans-Serif";
+                  ctx.textAlign = "right";
+                  ctx.fillText(
+                    String(playerCraftCounts[cr2 * 2 + cc2]),
+                    ox + (clx + 12) * scale,
+                    oy + (cly + 12) * scale
+                  );
+                  ctx.textAlign = "left";
+                }
+              }
+            }
+          }
+
+          // 2x2 クラフト結果アイテム
+          var pRes = calcCraftResult(playerCraftGrid, 2);
+          if (pRes) {
+            drawIcon(ox + (293 + 17) * scale, oy + (48 + 17) * scale, pRes.id);
+          }
+
+          // メインインベントリ
+          for (var r2 = 0; r2 < 3; r2++) {
+            for (var c2 = 0; c2 < 9; c2++) {
+              var id = inventory.main[r2 * 9 + c2] || 0;
+
+              if (id) {
+                var localX = invX + c2 * 35 + 17;
+                var localY = invY + r2 * 35 + 17;
+
+                var realX = ox + localX * scale;
+                var realY = oy + localY * scale;
+
+                drawIcon(realX, realY, id);
+                if (gameMode === "survival") {
+                  ctx.fillStyle = "#fff";
+                  ctx.font = "bold 11px Sans-Serif";
+                  ctx.textAlign = "right";
+                  ctx.fillText(
+                    String(inventory.mainCounts[r2 * 9 + c2] || 0),
+                    realX + 10,
+                    realY + 10
+                  );
+                  ctx.textAlign = "left";
+                }
+              }
+            }
+          }
+
+          // ホットバー
+          for (var hc2 = 0; hc2 < 9; hc2++) {
+            var hotId = inventory.hotbar[hc2] || 0;
+
+            if (hotId) {
+              var hotLocalX = hotX + hc2 * 35 + 17;
+              var hotLocalY = hotY + 17;
+
+              drawIcon(ox + hotLocalX * scale, oy + hotLocalY * scale, hotId);
+              if (
+                gameMode === "survival" &&
+                (inventory.hotbarCounts[hc2] || 0) > 1
+              ) {
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 11px Sans-Serif";
+                ctx.textAlign = "right";
+                ctx.fillText(
+                  String(inventory.hotbarCounts[hc2]),
+                  ox + (hotLocalX + 12) * scale,
+                  oy + (hotLocalY + 12) * scale
+                );
+                ctx.textAlign = "left";
+              }
+            }
+          }
+
+          // 手に持っているアイテム
+          if (inventory.holding) {
+            drawIcon(mouseX, mouseY, inventory.holding);
+          }
+
+          // WebGLのアイコンをCanvasへ合成
+          ctx.drawImage(gl.canvas, 0, 0);
+
+          FOV(before);
+        }
+
+        function drawInvCraftingTable() {
+          padMain();
+          var BASE_W = 334;
+          var BASE_H = 319;
+          var scale = Math.min(width / BASE_W, height / BASE_H);
+          var ox = (width - BASE_W * scale) / 2;
+          var oy = (height - BASE_H * scale) / 2;
+          var before = currentFov;
+
+          gl.clearColor(0.5, 0.5, 0.5, 0.0);
+          gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgb(30, 30, 30)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.save();
+          ctx.translate(ox, oy);
+          ctx.scale(scale, scale);
+
+          // パネル背景
+          ctx.fillStyle = "#C6C6C6";
+          ctx.fillRect(0, 0, BASE_W, BASE_H);
+          ctx.fillStyle = "#EEEEEE";
+          ctx.fillRect(0, 0, BASE_W, 3);
+          ctx.fillRect(0, 0, 3, BASE_H);
+          ctx.fillStyle = "#777777";
+          ctx.fillRect(0, BASE_H - 3, BASE_W, 3);
+          ctx.fillRect(BASE_W - 3, 0, 3, BASE_H);
+
+          // 閉じる「×」ボタン
+          var closeBtnX = BASE_W - 26,
+            closeBtnY = 6,
+            closeBtnW = 20,
+            closeBtnH = 20;
+          ctx.fillStyle = "#D9534F";
+          ctx.fillRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+          ctx.strokeStyle = "#843534";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(closeBtnX + 5, closeBtnY + 5);
+          ctx.lineTo(closeBtnX + closeBtnW - 5, closeBtnY + closeBtnH - 5);
+          ctx.moveTo(closeBtnX + closeBtnW - 5, closeBtnY + 5);
+          ctx.lineTo(closeBtnX + 5, closeBtnY + closeBtnH - 5);
+          ctx.stroke();
+
+          function slot(x, y, w, h) {
+            ctx.fillStyle = "#8B8B8B";
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = "#373737";
+            ctx.fillRect(x, y, w, 2);
+            ctx.fillRect(x, y, 2, h);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(x, y + h - 2, w, 2);
+            ctx.fillRect(x + w - 2, y, 2, h);
+          }
+
+          // タイトル「クラフト」
+          ctx.fillStyle = "#555555";
+          ctx.font = "15px Arial";
+          ctx.textAlign = "left";
+          ctx.fillText("クラフト", 55, 18);
+
+          // 3x3 クラフトスロット
+          var gridX = 55,
+            gridY = 25,
+            slotSize = 34,
+            gap = 1;
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 3; c++) {
+              slot(
+                gridX + c * (slotSize + gap),
+                gridY + r * (slotSize + gap),
+                slotSize,
+                slotSize
+              );
+            }
+          }
+
+          // 矢印「➔」
+          var arrowX = 168,
+            arrowY = 62;
+          ctx.fillStyle = "#999999";
+          ctx.fillRect(arrowX, arrowY - 3, 24, 6);
+          ctx.beginPath();
+          ctx.moveTo(arrowX + 24, arrowY - 10);
+          ctx.lineTo(arrowX + 38, arrowY);
+          ctx.lineTo(arrowX + 24, arrowY + 10);
+          ctx.closePath();
+          ctx.fill();
+
+          // 完成品スロット
+          var resultX = 228,
+            resultY = 43,
+            resSize = 38;
+          slot(resultX, resultY, resSize, resSize);
+
+          // タイトル「インベントリ」
+          ctx.fillStyle = "#555555";
+          ctx.font = "15px Arial";
+          ctx.fillText("インベントリ", 12, 146);
+
+          // メインインベントリ 3x9
+          var invX = 12,
+            invY = 155;
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 9; c++) {
+              slot(
+                invX + c * (slotSize + gap),
+                invY + r * (slotSize + gap),
+                slotSize,
+                slotSize
+              );
+            }
+          }
+
+          // ホットバー 1x9
+          var hotX = 12,
+            hotY = 267;
+          for (var hc = 0; hc < 9; hc++) {
+            slot(hotX + hc * (slotSize + gap), hotY, slotSize, slotSize);
+          }
+
+          ctx.restore();
+
+          // アイテム描画
+          FOV(90);
+
+          // 3x3 クラフトスロット
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 3; c++) {
+              var id = craftTableGrid[r * 3 + c];
+              if (id) {
+                var lx = gridX + c * 35 + 17;
+                var ly = gridY + r * 35 + 17;
+                drawIcon(ox + lx * scale, oy + ly * scale, id);
+              }
+            }
+          }
+
+          // 完成品アイテム
+          var craftRes = calcCraftResult(craftTableGrid, 3);
+          if (craftRes) {
+            drawIcon(
+              ox + (resultX + resSize / 2) * scale,
+              oy + (resultY + resSize / 2) * scale,
+              craftRes.id
+            );
+          }
+
+          // メインインベントリ
+          for (var r2 = 0; r2 < 3; r2++) {
+            for (var c2 = 0; c2 < 9; c2++) {
+              var id = inventory.main[r2 * 9 + c2] || 0;
+              if (id) {
+                var lx = invX + c2 * 35 + 17;
+                var ly = invY + r2 * 35 + 17;
+                drawIcon(ox + lx * scale, oy + ly * scale, id);
+                if (
+                  gameMode === "survival" &&
+                  (inventory.mainCounts[r2 * 9 + c2] || 0) > 1
+                ) {
+                  ctx.fillStyle = "#fff";
+                  ctx.font = "bold 11px Sans-Serif";
+                  ctx.textAlign = "right";
+                  ctx.fillText(
+                    String(inventory.mainCounts[r2 * 9 + c2]),
+                    ox + (lx + 12) * scale,
+                    oy + (ly + 12) * scale
+                  );
+                  ctx.textAlign = "left";
+                }
+              }
+            }
+          }
+
+          // ホットバー
+          for (var hc2 = 0; hc2 < 9; hc2++) {
+            var hotId = inventory.hotbar[hc2] || 0;
+            if (hotId) {
+              var lx = hotX + hc2 * 35 + 17;
+              var ly = hotY + 17;
+              drawIcon(ox + lx * scale, oy + ly * scale, hotId);
+              if (
+                gameMode === "survival" &&
+                (inventory.hotbarCounts[hc2] || 0) > 1
+              ) {
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 11px Sans-Serif";
+                ctx.textAlign = "right";
+                ctx.fillText(
+                  String(inventory.hotbarCounts[hc2]),
+                  ox + (lx + 12) * scale,
+                  oy + (ly + 12) * scale
+                );
+                ctx.textAlign = "left";
+              }
+            }
+          }
+
+          // 手持ちアイテム
+          if (inventory.holding) {
+            drawIcon(mouseX, mouseY, inventory.holding);
+          }
+
+          ctx.drawImage(gl.canvas, 0, 0);
+          FOV(before);
+        }
+
+        function drawInvFurnace() {
+          updateFurnace();
+          padMain();
+          var BASE_W = 334;
+          var BASE_H = 319;
+          var scale = Math.min(width / BASE_W, height / BASE_H);
+          var ox = (width - BASE_W * scale) / 2;
+          var oy = (height - BASE_H * scale) / 2;
+          var before = currentFov;
+
+          gl.clearColor(0.5, 0.5, 0.5, 0.0);
+          gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgb(30, 30, 30)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.save();
+          ctx.translate(ox, oy);
+          ctx.scale(scale, scale);
+
+          // パネル背景
+          ctx.fillStyle = "#C6C6C6";
+          ctx.fillRect(0, 0, BASE_W, BASE_H);
+          ctx.fillStyle = "#EEEEEE";
+          ctx.fillRect(0, 0, BASE_W, 3);
+          ctx.fillRect(0, 0, 3, BASE_H);
+          ctx.fillStyle = "#777777";
+          ctx.fillRect(0, BASE_H - 3, BASE_W, 3);
+          ctx.fillRect(BASE_W - 3, 0, 3, BASE_H);
+
+          // 閉じる「×」ボタン
+          var closeBtnX = BASE_W - 26,
+            closeBtnY = 6,
+            closeBtnW = 20,
+            closeBtnH = 20;
+          ctx.fillStyle = "#D9534F";
+          ctx.fillRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+          ctx.strokeStyle = "#843534";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(closeBtnX, closeBtnY, closeBtnW, closeBtnH);
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(closeBtnX + 5, closeBtnY + 5);
+          ctx.lineTo(closeBtnX + closeBtnW - 5, closeBtnY + closeBtnH - 5);
+          ctx.moveTo(closeBtnX + closeBtnW - 5, closeBtnY + 5);
+          ctx.lineTo(closeBtnX + 5, closeBtnY + closeBtnH - 5);
+          ctx.stroke();
+
+          function slot(x, y, w, h) {
+            ctx.fillStyle = "#8B8B8B";
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = "#373737";
+            ctx.fillRect(x, y, w, 2);
+            ctx.fillRect(x, y, 2, h);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(x, y + h - 2, w, 2);
+            ctx.fillRect(x + w - 2, y, 2, h);
+          }
+
+          // タイトル「かまど」
+          ctx.fillStyle = "#555555";
+          ctx.font = "15px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("かまど", 167, 18);
+          ctx.textAlign = "left";
+
+          // レシピ本アイコン（緑の本ボタン）
+          var bookX = 35,
+            bookY = 48,
+            bookW = 38,
+            bookH = 35;
+          ctx.fillStyle = "#EEEEEE";
+          ctx.fillRect(bookX, bookY, bookW, bookH);
+          ctx.strokeStyle = "#222222";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bookX, bookY, bookW, bookH);
+          ctx.fillStyle = "#3B9B55";
+          ctx.fillRect(bookX + 6, bookY + 5, 24, 20);
+          ctx.strokeStyle = "#222222";
+          ctx.strokeRect(bookX + 6, bookY + 5, 24, 20);
+          ctx.strokeStyle = "#CDE7C7";
+          ctx.beginPath();
+          ctx.moveTo(bookX + 9, bookY + 12);
+          ctx.lineTo(bookX + 27, bookY + 12);
+          ctx.moveTo(bookX + 9, bookY + 18);
+          ctx.lineTo(bookX + 27, bookY + 18);
+          ctx.stroke();
+
+          // 材料スロット (上)
+          var inputX = 105,
+            inputY = 25,
+            slotSize = 34,
+            gap = 1;
+          slot(inputX, inputY, slotSize, slotSize);
+
+          // 炎/煙アイコン (中央)
+          var flameX = 115,
+            flameY = 66;
+          if (furnaceData.fuelTime > 0) {
+            ctx.fillStyle = "#E25822";
+            ctx.beginPath();
+            ctx.moveTo(flameX + 7, flameY);
+            ctx.lineTo(flameX + 14, flameY + 14);
+            ctx.lineTo(flameX, flameY + 14);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = "#FFD700";
+            ctx.beginPath();
+            ctx.moveTo(flameX + 7, flameY + 4);
+            ctx.lineTo(flameX + 11, flameY + 14);
+            ctx.lineTo(flameX + 3, flameY + 14);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            ctx.strokeStyle = "#888888";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(flameX + 2, flameY + 14);
+            ctx.quadraticCurveTo(flameX + 5, flameY + 7, flameX + 3, flameY);
+            ctx.moveTo(flameX + 7, flameY + 14);
+            ctx.quadraticCurveTo(flameX + 10, flameY + 7, flameX + 8, flameY);
+            ctx.moveTo(flameX + 12, flameY + 14);
+            ctx.quadraticCurveTo(flameX + 15, flameY + 7, flameX + 13, flameY);
+            ctx.stroke();
+          }
+
+          // 燃料スロット (下)
+          var fuelX = 105,
+            fuelY = 95;
+          slot(fuelX, fuelY, slotSize, slotSize);
+
+          // 矢印「➔」
+          var arrowX = 155,
+            arrowY = 62;
+          ctx.fillStyle = "#999999";
+          ctx.fillRect(arrowX, arrowY - 3, 24, 6);
+          ctx.beginPath();
+          ctx.moveTo(arrowX + 24, arrowY - 10);
+          ctx.lineTo(arrowX + 38, arrowY);
+          ctx.lineTo(arrowX + 24, arrowY + 10);
+          ctx.closePath();
+          ctx.fill();
+
+          // 精錬進行ゲージ
+          if (furnaceData.cookTime > 0) {
+            var progress = furnaceData.cookTime / furnaceData.maxCookTime;
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(arrowX, arrowY - 2, Math.min(24, progress * 24), 4);
+          }
+
+          // 完成品スロット
+          var resultX = 215,
+            resultY = 48,
+            resSize = 38;
+          slot(resultX, resultY, resSize, resSize);
+
+          // タイトル「インベントリ」
+          ctx.fillStyle = "#555555";
+          ctx.font = "15px Arial";
+          ctx.fillText("インベントリ", 12, 146);
+
+          // メインインベントリ 3x9
+          var invX = 12,
+            invY = 155;
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 9; c++) {
+              slot(
+                invX + c * (slotSize + gap),
+                invY + r * (slotSize + gap),
+                slotSize,
+                slotSize
+              );
+            }
+          }
+
+          // ホットバー 1x9
+          var hotX = 12,
+            hotY = 267;
+          for (var hc = 0; hc < 9; hc++) {
+            slot(hotX + hc * (slotSize + gap), hotY, slotSize, slotSize);
+          }
+
+          ctx.restore();
+
+          // アイテム描画
+          FOV(90);
+
+          if (furnaceData.input) {
+            drawIcon(
+              ox + (inputX + 17) * scale,
+              oy + (inputY + 17) * scale,
+              furnaceData.input
+            );
+            if (gameMode === "survival" && (furnaceData.inputCount || 0) > 1) {
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 11px Sans-Serif";
+              ctx.textAlign = "right";
+              ctx.fillText(
+                String(furnaceData.inputCount),
+                ox + (inputX + 29) * scale,
+                oy + (inputY + 29) * scale
+              );
+              ctx.textAlign = "left";
+            }
+          }
+          if (furnaceData.fuel) {
+            drawIcon(
+              ox + (fuelX + 17) * scale,
+              oy + (fuelY + 17) * scale,
+              furnaceData.fuel
+            );
+            if (gameMode === "survival" && (furnaceData.fuelCount || 0) > 1) {
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 11px Sans-Serif";
+              ctx.textAlign = "right";
+              ctx.fillText(
+                String(furnaceData.fuelCount),
+                ox + (fuelX + 29) * scale,
+                oy + (fuelY + 29) * scale
+              );
+              ctx.textAlign = "left";
+            }
+          }
+          if (furnaceData.result) {
+            drawIcon(
+              ox + (resultX + resSize / 2) * scale,
+              oy + (resultY + resSize / 2) * scale,
+              furnaceData.result
+            );
+            if (gameMode === "survival" && (furnaceData.resultCount || 0) > 1) {
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 11px Sans-Serif";
+              ctx.textAlign = "right";
+              ctx.fillText(
+                String(furnaceData.resultCount),
+                ox + (resultX + resSize - 5) * scale,
+                oy + (resultY + resSize - 9) * scale
+              );
+              ctx.textAlign = "left";
+            }
+          }
+
+          // メインインベントリ
+          for (var r2 = 0; r2 < 3; r2++) {
+            for (var c2 = 0; c2 < 9; c2++) {
+              var id = inventory.main[r2 * 9 + c2] || 0;
+              if (id) {
+                var lx = invX + c2 * 35 + 17;
+                var ly = invY + r2 * 35 + 17;
+                drawIcon(ox + lx * scale, oy + ly * scale, id);
+                if (
+                  gameMode === "survival" &&
+                  (inventory.mainCounts[r2 * 9 + c2] || 0) > 1
+                ) {
+                  ctx.fillStyle = "#fff";
+                  ctx.font = "bold 11px Sans-Serif";
+                  ctx.textAlign = "right";
+                  ctx.fillText(
+                    String(inventory.mainCounts[r2 * 9 + c2]),
+                    ox + (lx + 12) * scale,
+                    oy + (ly + 12) * scale
+                  );
+                  ctx.textAlign = "left";
+                }
+              }
+            }
+          }
+
+          // ホットバー
+          for (var hc2 = 0; hc2 < 9; hc2++) {
+            var hotId = inventory.hotbar[hc2] || 0;
+            if (hotId) {
+              var lx = hotX + hc2 * 35 + 17;
+              var ly = hotY + 17;
+              drawIcon(ox + lx * scale, oy + ly * scale, hotId);
+              if (
+                gameMode === "survival" &&
+                (inventory.hotbarCounts[hc2] || 0) > 1
+              ) {
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 11px Sans-Serif";
+                ctx.textAlign = "right";
+                ctx.fillText(
+                  String(inventory.hotbarCounts[hc2]),
+                  ox + (lx + 12) * scale,
+                  oy + (ly + 12) * scale
+                );
+                ctx.textAlign = "left";
+              }
+            }
+          }
+
+          // 手持ちアイテム
+          if (inventory.holding) {
+            drawIcon(mouseX, mouseY, inventory.holding);
+          }
+
+          ctx.drawImage(gl.canvas, 0, 0);
+          FOV(before);
+        }
+
+        function clickInvCraftingTable() {
+          padMain();
+          var BASE_W = 334;
+          var BASE_H = 319;
+          var scale = Math.min(width / BASE_W, height / BASE_H);
+          var ox = (width - BASE_W * scale) / 2;
+          var oy = (height - BASE_H * scale) / 2;
+          var mx = (mouseX - ox) / scale;
+          var my = (mouseY - oy) / scale;
+
+          // 閉じる「×」ボタン または パネル外クリックで閉じる
+          if (
+            (mx >= BASE_W - 26 && mx <= BASE_W - 6 && my >= 6 && my <= 26) ||
+            mx < 0 ||
+            mx > BASE_W ||
+            my < 0 ||
+            my > BASE_H
+          ) {
+            play();
+            return;
+          }
+
+          var gridX = 55,
+            gridY = 25,
+            slotSize = 34,
+            gap = 1;
+
+          // 3x3 クラフトスロット
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 3; c++) {
+              var x = gridX + c * (slotSize + gap);
+              var y = gridY + r * (slotSize + gap);
+              if (
+                mx >= x &&
+                mx < x + slotSize &&
+                my >= y &&
+                my < y + slotSize
+              ) {
+                var idx = r * 3 + c;
+                mergePick(
+                  function () {
+                    return {
+                      id: craftTableGrid[idx] || 0,
+                      count: craftTableCounts[idx] || 0,
+                    };
+                  },
+                  function (id, cnt) {
+                    craftTableGrid[idx] = id;
+                    craftTableCounts[idx] = id ? cnt : 0;
+                  }
+                );
+                return;
+              }
+            }
+          }
+
+          // 完成品スロット
+          var resultX = 228,
+            resultY = 43,
+            resSize = 38;
+          if (
+            mx >= resultX &&
+            mx < resultX + resSize &&
+            my >= resultY &&
+            my < resultY + resSize
+          ) {
+            var craftRes = calcCraftResult(craftTableGrid, 3);
+            if (craftRes) {
+              var currentHoldingCount = inventory.holding
+                ? inventory.holdingCount || 1
+                : 0;
+              var canTake =
+                !inventory.holding || inventory.holding === craftRes.id;
+              canTake =
+                canTake && currentHoldingCount + craftRes.count <= MAX_STACK;
+              if (canTake) {
+                inventory.holding = craftRes.id;
+                inventory.holdingCount = currentHoldingCount + craftRes.count;
+                consumeCraftGrid(craftTableGrid, craftTableCounts);
+              }
+            }
+            return;
+          }
+
+          // メインインベントリ
+          var invX = 12,
+            invY = 155;
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 9; c++) {
+              var x = invX + c * (slotSize + gap);
+              var y = invY + r * (slotSize + gap);
+              if (
+                mx >= x &&
+                mx < x + slotSize &&
+                my >= y &&
+                my < y + slotSize
+              ) {
+                var idx = r * 9 + c;
+                var oldItem = inventory.main[idx] || 0;
+                var oldCount = inventory.mainCounts[idx] || (oldItem ? 1 : 0);
+                var holdCount = inventory.holding
+                  ? inventory.holdingCount || 1
+                  : 0;
+                inventory.main[idx] = inventory.holding || 0;
+                inventory.mainCounts[idx] = holdCount;
+                inventory.holding = oldItem;
+                inventory.holdingCount = oldCount;
+                return;
+              }
+            }
+          }
+
+          // ホットバー
+          var hotX = 12,
+            hotY = 267;
+          for (var hc = 0; hc < 9; hc++) {
+            var hx = hotX + hc * (slotSize + gap);
+            if (
+              mx >= hx &&
+              mx < hx + slotSize &&
+              my >= hotY &&
+              my < hotY + slotSize
+            ) {
+              var oldHot = inventory.hotbar[hc] || 0;
+              var oldHotCount = inventory.hotbarCounts[hc] || (oldHot ? 1 : 0);
+              var holdHotCount = inventory.holding
+                ? inventory.holdingCount || 1
+                : 0;
+              inventory.hotbar[hc] = inventory.holding || 0;
+              inventory.hotbarCounts[hc] = holdHotCount;
+              inventory.holding = oldHot;
+              inventory.holdingCount = oldHotCount;
+              return;
+            }
+          }
+        }
+
+        function clickInvFurnace() {
+          padMain();
+          var BASE_W = 334;
+          var BASE_H = 319;
+          var scale = Math.min(width / BASE_W, height / BASE_H);
+          var ox = (width - BASE_W * scale) / 2;
+          var oy = (height - BASE_H * scale) / 2;
+          var mx = (mouseX - ox) / scale;
+          var my = (mouseY - oy) / scale;
+
+          // 閉じる「×」ボタン または パネル外クリックで閉じる
+          if (
+            (mx >= BASE_W - 26 && mx <= BASE_W - 6 && my >= 6 && my <= 26) ||
+            mx < 0 ||
+            mx > BASE_W ||
+            my < 0 ||
+            my > BASE_H
+          ) {
+            play();
+            return;
+          }
+
+          var slotSize = 34,
+            gap = 1;
+
+          // レシピ本アイコン（一覧へ）
+          if (mx >= 35 && mx <= 73 && my >= 48 && my <= 83) {
+            invView = "list";
+            return;
+          }
+
+          // 材料スロット (上)
+          var inputX = 105,
+            inputY = 25;
+          if (
+            mx >= inputX &&
+            mx < inputX + slotSize &&
+            my >= inputY &&
+            my < inputY + slotSize
+          ) {
+            mergePick(
+              function () {
+                return {
+                  id: furnaceData.input || 0,
+                  count: furnaceData.inputCount || 0,
+                };
+              },
+              function (id, cnt) {
+                furnaceData.input = id;
+                furnaceData.inputCount = id ? cnt : 0;
+              }
+            );
+            furnaceData.cookTime = 0;
+            return;
+          }
+
+          // 燃料スロット (下)
+          var fuelX = 105,
+            fuelY = 95;
+          if (
+            mx >= fuelX &&
+            mx < fuelX + slotSize &&
+            my >= fuelY &&
+            my < fuelY + slotSize
+          ) {
+            mergePick(
+              function () {
+                return {
+                  id: furnaceData.fuel || 0,
+                  count: furnaceData.fuelCount || 0,
+                };
+              },
+              function (id, cnt) {
+                furnaceData.fuel = id;
+                furnaceData.fuelCount = id ? cnt : 0;
+              }
+            );
+            return;
+          }
+
+          // 完成品スロット
+          var resultX = 215,
+            resultY = 48,
+            resSize = 38;
+          if (
+            mx >= resultX &&
+            mx < resultX + resSize &&
+            my >= resultY &&
+            my < resultY + resSize
+          ) {
+            if (furnaceData.result) {
+              if (!inventory.holding) {
+                inventory.holding = furnaceData.result;
+                inventory.holdingCount = furnaceData.resultCount || 1;
+                furnaceData.result = 0;
+                furnaceData.resultCount = 0;
+              } else if (inventory.holding === furnaceData.result) {
+                var mvR = Math.min(
+                  furnaceData.resultCount || 1,
+                  MAX_STACK - (inventory.holdingCount || 1)
+                );
+                if (mvR > 0) {
+                  inventory.holdingCount = (inventory.holdingCount || 1) + mvR;
+                  furnaceData.resultCount =
+                    (furnaceData.resultCount || 1) - mvR;
+                  if ((furnaceData.resultCount || 0) <= 0) {
+                    furnaceData.result = 0;
+                    furnaceData.resultCount = 0;
+                  }
+                }
+              }
+            }
+            return;
+          }
+
+          // メインインベントリ
+          var invX = 12,
+            invY = 155;
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 9; c++) {
+              var x = invX + c * (slotSize + gap);
+              var y = invY + r * (slotSize + gap);
+              if (
+                mx >= x &&
+                mx < x + slotSize &&
+                my >= y &&
+                my < y + slotSize
+              ) {
+                var idx = r * 9 + c;
+                var oldItem = inventory.main[idx] || 0;
+                var oldCount = inventory.mainCounts[idx] || (oldItem ? 1 : 0);
+                var holdCount = inventory.holding
+                  ? inventory.holdingCount || 1
+                  : 0;
+                inventory.main[idx] = inventory.holding || 0;
+                inventory.mainCounts[idx] = holdCount;
+                inventory.holding = oldItem;
+                inventory.holdingCount = oldCount;
+                return;
+              }
+            }
+          }
+
+          // ホットバー
+          var hotX = 12,
+            hotY = 267;
+          for (var hc = 0; hc < 9; hc++) {
+            var hx = hotX + hc * (slotSize + gap);
+            if (
+              mx >= hx &&
+              mx < hx + slotSize &&
+              my >= hotY &&
+              my < hotY + slotSize
+            ) {
+              var oldHot = inventory.hotbar[hc] || 0;
+              var oldHotCount = inventory.hotbarCounts[hc] || (oldHot ? 1 : 0);
+              var holdHotCount = inventory.holding
+                ? inventory.holdingCount || 1
+                : 0;
+              inventory.hotbar[hc] = inventory.holding || 0;
+              inventory.hotbarCounts[hc] = holdHotCount;
+              inventory.holding = oldHot;
+              inventory.holdingCount = oldHotCount;
+              return;
+            }
+          }
+        }
+
+        function clickInvList() {
+          // ゲームに戻る（閉じる）ボタン
+          if (
+            mouseX >= width - 130 &&
+            mouseX <= width - 10 &&
+            mouseY >= 12 &&
+            mouseY <= 44
+          ) {
+            play();
+            return;
+          }
+          // インベントリに戻るボタン
+          if (
+            mouseX >= width - 260 &&
+            mouseX <= width - 140 &&
+            mouseY >= 12 &&
+            mouseY <= 44
+          ) {
+            invView = "main";
+            return;
+          }
+          var s = inventory.size;
+          var s2 = s / 2;
+          var perRow = 13;
+          var totalBlocks = blockData.length - 1;
+          var numRows = Math.ceil(totalBlocks / perRow);
+          var gridStartX = 50 - s2;
+          var gridStartY = 50 - s2;
+
+          var hotX = width / 2 - (inventory.hotbar.length / 2) * s + 25;
+          var hotY = height - s * 1.5;
+          if (
+            mouseX >= hotX &&
+            mouseX < hotX + 9 * s &&
+            mouseY >= hotY &&
+            mouseY < hotY + s
+          ) {
+            var overHot = Math.floor((mouseX - hotX) / s);
+            if (overHot >= 0 && overHot < 9) {
+              var temp = inventory.hotbar[overHot] || 0;
+              var tempCount = inventory.hotbarCounts[overHot] || (temp ? 1 : 0);
+              var holdTempCount = inventory.holding
+                ? inventory.holdingCount || 1
+                : 0;
+              inventory.hotbar[overHot] = inventory.holding || 0;
+              inventory.hotbarCounts[overHot] = holdTempCount;
+              inventory.holding = temp;
+              inventory.holdingCount = tempCount;
+            }
+            return;
+          }
+
+          var col = Math.floor((mouseX - gridStartX) / s);
+          var row = Math.floor((mouseY - gridStartY) / s);
+          if (col >= 0 && col < perRow && row >= 0 && row < numRows) {
+            var over = row * perRow + col;
+            if (over < totalBlocks) {
+              inventory.holding = over + 1;
+              inventory.holdingCount = 1;
+              return;
+            }
+          }
+        }
+
+        function clickInvMain() {
+          padMain();
+
+          var BASE_W = 334;
+          var BASE_H = 319;
+
+          var scale = Math.min(width / BASE_W, height / BASE_H);
+          var ox = (width - BASE_W * scale) / 2;
+          var oy = (height - BASE_H * scale) / 2;
+
+          // マウスを334×319の座標に変換
+          var mx = (mouseX - ox) / scale;
+          var my = (mouseY - oy) / scale;
+
+          // 閉じる「×」ボタン または パネル外クリックで閉じる
+          if (
+            (mx >= BASE_W - 26 && mx <= BASE_W - 6 && my >= 6 && my <= 26) ||
+            mx < 0 ||
+            mx > BASE_W ||
+            my < 0 ||
+            my > BASE_H
+          ) {
+            play();
+            return;
+          }
+
+          // --------------------------------------------------
+          // レシピブック
+          // --------------------------------------------------
+
+          if (mx >= 199 && mx <= 237 && my >= 113 && my <= 148) {
+            invView = "list";
+            return;
+          }
+
+          // --------------------------------------------------
+          // 2x2 クラフトスロット
+          // --------------------------------------------------
+          for (var cr = 0; cr < 2; cr++) {
+            for (var cc = 0; cc < 2; cc++) {
+              var cx = 185 + cc * 35;
+              var cy = 29 + cr * 35;
+              if (mx >= cx && mx < cx + 34 && my >= cy && my < cy + 34) {
+                var cIdx = cr * 2 + cc;
+                mergePick(
+                  function () {
+                    return {
+                      id: playerCraftGrid[cIdx] || 0,
+                      count: playerCraftCounts[cIdx] || 0,
+                    };
+                  },
+                  function (id, cnt) {
+                    playerCraftGrid[cIdx] = id;
+                    playerCraftCounts[cIdx] = id ? cnt : 0;
+                  }
+                );
+                return;
+              }
+            }
+          }
+
+          // --------------------------------------------------
+          // 2x2 クラフト結果スロット
+          // --------------------------------------------------
+          if (mx >= 293 && mx < 293 + 34 && my >= 48 && my < 48 + 34) {
+            var pRes = calcCraftResult(playerCraftGrid, 2);
+            if (pRes) {
+              var currentHoldingCount2 = inventory.holding
+                ? inventory.holdingCount || 1
+                : 0;
+              var canTake2 =
+                !inventory.holding || inventory.holding === pRes.id;
+              canTake2 =
+                canTake2 && currentHoldingCount2 + pRes.count <= MAX_STACK;
+              if (canTake2) {
+                inventory.holding = pRes.id;
+                inventory.holdingCount = currentHoldingCount2 + pRes.count;
+                consumeCraftGrid(playerCraftGrid, playerCraftCounts);
+              }
+            }
+            return;
+          }
+
+          // --------------------------------------------------
+          // メインインベントリ
+          // --------------------------------------------------
+
+          var invX = 12;
+          var invY = 155;
+          var slotSize = 34;
+          var gap = 1;
+
+          for (var r = 0; r < 3; r++) {
+            for (var c = 0; c < 9; c++) {
+              var x = invX + c * (slotSize + gap);
+              var y = invY + r * (slotSize + gap);
+
+              if (
+                mx >= x &&
+                mx < x + slotSize &&
+                my >= y &&
+                my < y + slotSize
+              ) {
+                var idx = r * 9 + c;
+
+                mergePick(
+                  function () {
+                    return {
+                      id: inventory.main[idx] || 0,
+                      count: inventory.mainCounts[idx] || 0,
+                    };
+                  },
+                  function (id, cnt) {
+                    inventory.main[idx] = id;
+                    inventory.mainCounts[idx] = id ? cnt : 0;
+                  }
+                );
+
+                return;
+              }
+            }
+          }
+
+          // --------------------------------------------------
+          // ホットバー
+          // --------------------------------------------------
+
+          var hotX = 12;
+          var hotY = 267;
+
+          for (var hc = 0; hc < 9; hc++) {
+            var hx = hotX + hc * (slotSize + gap);
+
+            if (
+              mx >= hx &&
+              mx < hx + slotSize &&
+              my >= hotY &&
+              my < hotY + slotSize
+            ) {
+              mergePick(
+                function () {
+                  return {
+                    id: inventory.hotbar[hc] || 0,
+                    count: inventory.hotbarCounts[hc] || 0,
+                  };
+                },
+                function (id, cnt) {
+                  inventory.hotbar[hc] = id;
+                  inventory.hotbarCounts[hc] = id ? cnt : 0;
+                }
+              );
+
+              return;
+            }
+          }
+        }
+
+        function mmoved(e) {
+          p.rx -= e.movementY / 300;
+          p.ry += e.movementX / 300;
+          while (p.ry > Math.PI * 2) {
+            p.ry -= Math.PI * 2;
+          }
+          while (p.ry < 0) {
+            p.ry += Math.PI * 2;
+          }
+          if (p.rx > Math.PI / 2) {
+            p.rx = Math.PI / 2;
+          }
+          if (p.rx < -Math.PI / 2) {
+            p.rx = -Math.PI / 2;
+          }
+        }
+
+        function trackMouse(e) {
+          mouseX = e.x;
+          mouseY = e.y;
+        }
+        doc.onmousemove = trackMouse;
+        doc.onpointerlockchange = function () {
+          if (doc.pointerLockElement === canvas) {
+            doc.onmousemove = mmoved;
+          } else {
+            doc.onmousemove = trackMouse;
+            if (screen === "play" && !freezeFrame) {
+              screen = "pause";
+              unpauseDelay = Date.now() + 1000;
+            }
+          }
+          for (var key in Key) {
+            Key[key] = false;
+          }
+        };
+        canvas.onmousedown = function (e) {
+          mouseButton = [LEFT, 1, RIGHT][e.button];
+          mouseX = e.x;
+          mouseY = e.y;
+          switch (e.button) {
+            case 0:
+              Key.leftMouse = true;
+              // 長押し破壊：押すたびに破壊進行をリセットする
+              breakState.key = "";
+              // 照準上にモブがいれば攻撃（ブロック破壊はしない）
+              if (typeof mobTryAttack === "function") mobTryAttack();
+              updateHUD = true;
+              break;
+            case 1:
+              Key.middleMouse = true;
+              var pickedId = world.getBlock(
+                hitBox.pos[0],
+                hitBox.pos[1],
+                hitBox.pos[2]
+              );
+              var samePick =
+                inventory.hotbar[inventory.hotbarSlot] === pickedId;
+              inventory.hotbar[inventory.hotbarSlot] = pickedId;
+              // 異なるブロックをピックした場合は古い所持数を引き継がない
+              inventory.hotbarCounts[inventory.hotbarSlot] = samePick
+                ? inventory.hotbarCounts[inventory.hotbarSlot] || 1
+                : 1;
+              break;
+            case 2:
+              Key.rightMouse = true;
+              break;
+          }
+          if (screen === "play") {
+            if (doc.pointerLockElement !== canvas) {
+              getPointer();
+              p.lastBreak = Date.now();
+            } else {
+              var isRight =
+                mouseButton === RIGHT || (mouseButton === LEFT && Key.control);
+              if (isRight && hitBox.pos && !Key.shift) {
+                var targetedBlock = world.getBlock(
+                  hitBox.pos[0],
+                  hitBox.pos[1],
+                  hitBox.pos[2]
+                );
+                if (targetedBlock === 76) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  screen = "inventory";
+                  invView = "craftingTable";
+                  releasePointer();
+                  updateMobileControls();
+                  return;
+                } else if (targetedBlock === 78) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  screen = "inventory";
+                  invView = "furnace";
+                  releasePointer();
+                  updateMobileControls();
+                  return;
+                } else if (
+                  targetedBlock &&
+                  customIds[targetedBlock] &&
+                  customIds[targetedBlock].type === "door"
+                ) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  toggleDoor();
+                  return;
+                }
+              }
+              place = false;
+              if (mouseButton === LEFT) {
+                if (Key.control) {
+                  place = true;
+                } else {
+                  // 長押しで破壊：押した時点では壊さず、破壊進行の開始だけを行う。
+                  // サバイバルでは blockBreakDuration 分の長押し後に壊れる。
+                  // （クリエイティブは即時破壊のまま）
+                  tryBreakBlock();
+                }
+              }
+              holding = inventory.hotbar[inventory.hotbarSlot];
+              if (mouseButton === RIGHT && holding) {
+                place = true;
+              }
+              if (place) {
+                newWorldBlock();
+              }
+            }
+          } else if (screen === "inventory") {
+            clickInv();
+          }
+          var currentScreen = screen;
+          for (var i = 0; i < buttons.length; i++) {
+            if (buttons[i].screen === currentScreen) {
+              clickButton(buttons[i]);
+            }
+          }
+        };
+        canvas.onmouseup = function (e) {
+          switch (e.button) {
+            case 0:
+              Key.leftMouse = false;
+              breakState.key = "";
+              updateHUD = true;
+              break;
+            case 1:
+              Key.middleMouse = false;
+              break;
+            case 2:
+              Key.rightMouse = false;
+              break;
+          }
+        };
+
+        // モバイル操作：ボタンでWASD・ジャンプ・壊す・置く・インベントリを操作
+        (function setupMobileControls() {
+          var root = document.getElementById("mobileControls");
+          if (!root) return;
+          root.querySelectorAll("[data-key]").forEach(function (btn) {
+            var key = btn.getAttribute("data-key");
+            function down(e) {
+              e.preventDefault();
+              var now = Date.now();
+
+              // ジャンプボタン2回押しで飛行を切り替え
+              if (key === " " && screen === "play") {
+                if (now < p.lastJump + 400) {
+                  // サバイバルでは二段ジャンプによる飛行切り替えはできない
+                  if (gameMode === "creative") p.flying ^= true;
+                } else {
+                  p.lastJump = now;
+                }
+              }
+
+              // 移動ボタン2回押しでダッシュ
+              if (
+                (key === "w" || key === "a" || key === "s" || key === "d") &&
+                screen === "play"
+              ) {
+                if (p.lastMoveTapKey === key && now < p.lastMoveTap + 350) {
+                  p.sprinting = true;
+                }
+                p.lastMoveTapKey = key;
+                p.lastMoveTap = now;
+              }
+
+              Key[key] = true;
+            }
+            function up(e) {
+              e.preventDefault();
+              Key[key] = false;
+              if (key === "leftMouse") {
+                breakState.key = "";
+                updateHUD = true;
+              }
+            }
+            btn.addEventListener("touchstart", down, { passive: false });
+            btn.addEventListener("touchend", up, { passive: false });
+            btn.addEventListener("touchcancel", up, { passive: false });
+          });
+          var openBtn = root.querySelector('[data-action="openBlock"]');
+          if (openBtn)
+            openBtn.addEventListener(
+              "touchstart",
+              function (e) {
+                e.preventDefault();
+                if (screen !== "play" || !hitBox.pos) return;
+                var targetedBlock = world.getBlock(
+                  hitBox.pos[0],
+                  hitBox.pos[1],
+                  hitBox.pos[2]
+                );
+                if (targetedBlock === 76 || targetedBlock === 78) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  screen = "inventory";
+                  invView = targetedBlock === 76 ? "craftingTable" : "furnace";
+                  releasePointer();
+                  updateMobileControls();
+                } else if (
+                  targetedBlock &&
+                  customIds[targetedBlock] &&
+                  customIds[targetedBlock].type === "door"
+                ) {
+                  Key.rightMouse = false;
+                  Key.leftMouse = false;
+                  toggleDoor();
+                }
+              },
+              { passive: false }
+            );
+          var invBtn = root.querySelector('[data-action="inventory"]');
+          if (invBtn)
+            invBtn.addEventListener(
+              "touchstart",
+              function (e) {
+                e.preventDefault();
+                if (screen === "play") {
+                  screen = "inventory";
+                  invView = "main";
+                  releasePointer();
+                } else if (screen === "inventory") {
+                  play();
+                }
+                updateMobileControls();
+              },
+              { passive: false }
+            );
+        })();
+
+        var mobileLookX = 0,
+          mobileLookY = 0;
+        canvas.addEventListener(
+          "touchstart",
+          function (e) {
+            if (controlMode !== "mobile" || screen !== "play") return;
+            if (e.touches.length) {
+              mobileLookX = e.touches[0].clientX;
+              mobileLookY = e.touches[0].clientY;
+            }
+          },
+          { passive: false }
+        );
+        canvas.addEventListener(
+          "touchmove",
+          function (e) {
+            if (controlMode !== "mobile" || screen !== "play") return;
+            if (!e.touches.length) return;
+            var t = e.touches[0];
+            var dx = t.clientX - mobileLookX;
+            var dy = t.clientY - mobileLookY;
+            if (Math.abs(dx) + Math.abs(dy) > 1) {
+              p.rx -= dy / 300;
+              p.ry += dx / 300;
+              if (p.rx > Math.PI / 2) p.rx = Math.PI / 2;
+              if (p.rx < -Math.PI / 2) p.rx = -Math.PI / 2;
+              while (p.ry > Math.PI * 2) p.ry -= Math.PI * 2;
+              while (p.ry < 0) p.ry += Math.PI * 2;
+              mobileLookX = t.clientX;
+              mobileLookY = t.clientY;
+              updateMobileControls();
+            }
+            e.preventDefault();
+          },
+          { passive: false }
+        );
+
+        // モバイルのインベントリ：タップでブロックを持つ／別スロットをタップして入れ替える
+        canvas.addEventListener(
+          "touchend",
+          function (e) {
+            var t = e.changedTouches[0];
+            if (!t) return;
+            mouseX = t.clientX;
+            mouseY = t.clientY;
+            if (controlMode === "mobile" && screen === "play") {
+              var hs = inventory.size;
+              var hx = width / 2 - (9 / 2) * hs + 25;
+              var hy = height - hs * 1.5;
+              if (
+                mouseX >= hx &&
+                mouseX < hx + hs * 9 &&
+                mouseY >= hy &&
+                mouseY < hy + hs
+              ) {
+                var slot = Math.floor((mouseX - hx) / hs);
+                if (slot >= 0 && slot < inventory.hotbar.length) {
+                  inventory.hotbarSlot = slot;
+                  holding = inventory.hotbar[inventory.hotbarSlot];
+                  inventory.holdingCount =
+                    inventory.hotbarCounts[inventory.hotbarSlot] ||
+                    (holding ? 1 : 0);
+                  updateHUD = true;
+                  e.preventDefault();
+                  return;
+                }
+              }
+            }
+            if (controlMode !== "mobile" || screen !== "inventory") return;
+            clickInv();
+            updateHUD = true;
+            e.preventDefault();
+          },
+          { passive: false }
+        );
+
+        doc.onkeydown = function (e) {
+          if (e.key === "Tab") {
+            e.preventDefault();
+          }
+          if (e.repeat) {
+            return;
+          }
+          var k = e.key.toLowerCase();
+          Key[k] = true;
+          if (k === "w" || k === "a" || k === "s" || k === "d") {
+            var nowMoveTap = Date.now();
+            if (
+              p &&
+              p.lastMoveTapKey === k &&
+              nowMoveTap < p.lastMoveTap + 350
+            ) {
+              p.sprinting = true;
+            }
+            if (p) {
+              p.lastMoveTapKey = k;
+              p.lastMoveTap = nowMoveTap;
+            }
+          }
+          if (k === "delete") {
+            savedWorldData = null;
+            blockChanges = {};
+            furnaceOrientations = {};
+            blockMetadata = {};
+            pendingBlockChanges = false;
+            initEverything();
+          }
+          if (k === "t") {
+            if (isMultiplayer && window.__mcMPOpenChat) {
+              e.preventDefault();
+              window.__mcMPOpenChat();
+            } else {
+              initTextures();
+            }
+          }
+          if (screen === "play") {
+            if (k === "p") {
+              releasePointer();
+              screen = "pause";
+            }
+            if (k === "b") {
+              p.autoBreak = !p.autoBreak;
+            }
+            if (k === " ") {
+              if (Date.now() < p.lastJump + 400) {
+                // サバイバルでは二段ジャンプによる飛行切り替えはできない
+                if (gameMode === "creative") p.flying ^= true;
+              } else {
+                p.lastJump = Date.now();
+              }
+            }
+            if (k === "z") {
+              FOV(10);
+            }
+            if (k === "x") {
+              //Quake Pro lol
+              FOV(110);
+            }
+            if (k === "e") {
+              screen = "inventory";
+              invView = "main";
+              releasePointer();
+            }
+            if (k === ";") {
+              releasePointer();
+              // ctx.clearRect(0, 0, canvas.width, canvas.height);
+              // ctx.drawImage(gl.canvas, 0, 0);
+              // hud();
+              // updateHUD = false;
+              freezeFrame = true;
+              // analytics.lastUpdate = Date.now() + 10000;
+            }
+            if (Number(k)) {
+              inventory.hotbarSlot = Number(k) - 1;
+              holding = inventory.hotbar[inventory.hotbarSlot];
+              updateHUD = true;
+            }
+          } else if (screen === "pause") {
+            if (k === "p") {
+              play();
+            }
+          } else if (screen === "settings") {
+            if (k === "escape") {
+              screen = "pause";
+            }
+          } else if (screen === "inventory") {
+            if (k === "e") {
+              play();
+            }
+          }
+        };
+        doc.onkeyup = function (e) {
+          var k = e.key.toLowerCase();
+          Key[k] = false;
+          if (
+            k === "escape" &&
+            (screen.includes("pause") || screen === "inventory") &&
+            Date.now() > unpauseDelay
+          ) {
+            play();
+          }
+          if (screen === "play") {
+            if (k === "z") {
+              FOV(fov);
+            }
+          }
+        };
+        canvas.onblur = function (e) {
+          for (var key in Key) {
+            Key[key] = false;
+          }
+        };
+        canvas.oncontextmenu = function (e) {
+          e.preventDefault();
+        };
+
+        // サバイバルHUD用ピクセル画像（ハート・満腹・破壊ひび）
+        var survivalHudImages = {
+          heartFull: new Image(),
+          heartEmpty: new Image(),
+          foodFull: new Image(),
+          foodEmpty: new Image(),
+          cracks: new Image(),
+        };
+        survivalHudImages.heartFull.src =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAL0AAAASCAYAAAAOnd8LAAAA7klEQVR4nO3ZsRGDIBTG8UcuSzCEaWmcyIEykY2tGYIxTJHD0wiKXooH+X+VPuUHBXAnihBCCCGEVBUTK7Yi0/K+FzGxWk4HWFjarA0cGjytnWsP781o7Qx13mcNDAtLo3VLIY1z0ji3qoeETr7rWFglWKtJv3zpSg0LqwRrM+kJqT331IPXMPysEywsTRY7Pfm7rCZ9L2LC1+5ROu93v66xsLRa0Z3+CMvtDAtLo7WZ9GFFpLDcM1QsLK1WdKdPYWcGhIVVmiUinwP9VmQarZ3C9SkAC0uhdbgKlo1PrxosrEKt3d/BWFi1WoRUkzcgkzeOtwTFoQAAAABJRU5ErkJggg==";
+        survivalHudImages.heartEmpty.src =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAL0AAAASCAYAAAAOnd8LAAAAz0lEQVR4nO3ZMQ6EIBCF4cdGz2Tj8W3mTFu4lVlRELQa8H8dY/ygGEgUiRBCCCGkq4RUcZbW/XiRQqpWMwEWljdryCHfafoXzaLxaKZZWksLw8LyaH2KiM67aXt+rGNhtWBFTZ9C7tSwsFqwTk1PSO+h6cnrQtOT1yVq+kUKo1nVi6PZ5W8lLCyvVvKkL2G1k2FhebROTb/tiBy21WsuD7CwPFrJkz6H3VkQFpZXK/she8SeLAgLy6NVnGB/k/VkQVhYLVqX18FYWL1ahHSTH8cI7IyA9CpiAAAAAElFTkSuQmCC";
+        survivalHudImages.foodFull.src =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAL0AAAASCAYAAAAOnd8LAAAA3UlEQVR4nO2ZIRKDMBAA0049Bt0fYDAYNI/gCf1Qf8Aj0DU1NflBNaYvSFVm0jbHhMYcsOtIwuZEkrlLjAEAAADYFAepo6tKF2sf7ST+gwvXGlynOVlfFx/fw+O1NB5cuNS5jrFGv3Pa5iz2pYILlzbXz6L3A/u6MLf7c8n84qS4cGlyRU96gC3DoofdMVvIfhMUC+6fKhsXLg0uTnrYHUn39H7XhBXy5WqT71Rx4dLkEtObcNBoJ9NVpWublBBw4dLtSk5vcnMsXLi0uLKefHMDxYVrLS4AAAAAxbwBKVWMscL0LPAAAAAASUVORK5CYII=";
+        survivalHudImages.foodEmpty.src =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAL0AAAASCAYAAAAOnd8LAAAAsklEQVR4nO3ZvRGCMACAUfB0g6yRNRyaNVgjG6TQygJNNNAY4L2Ov+8oAuTCMAAAHMpYO3CP4VHaP82peo2W1h5a12+xHOJi+5bmtfejpdVd61LaWXtyfh3T0tpD62PQv058f3K20NLqsVV808ORGfSczqpBn0Mccoir511aWj21vOk5naZ1+tpyUOuaqpZWT63mHwGlz8SWHwlaWv9uNU9vpjmNW29CS6unljk9AADs2xO7KEena6LYsgAAAABJRU5ErkJggg==";
+        survivalHudImages.cracks.src =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAABACAYAAACKusa+AAAGz0lEQVR4nO3dMXLbSBaA4ectR0ysgIkd+DA8BGMeTTEPwcMwWCcI5ISpNpmuwaJACiQaQDfwfVWqsSyKxK+xhMcGCEUAAAAAAJDJfr//2O/3H5fL5fNyuXzu9/uPpbdpTvr169evX7/+5fv/s+SDAwAwPwMgAMBK3VtpNAACAKxQGv76DjkbAAEAViYNfOfz+Uf6bzoPMcIACACwSmn4i4g4Ho9/IyKapnmLMAACAKxK93Bvd/iLMAACAKxG99DvPQZAAIAV6Bv++lb/IgyAAADVe2b4izAAAgCswtDhL8IACABQtSEv+ugyAAIAVGroiz66DIAAABV69ry/NgMgAEBlxgx/EQZAAIAqvTr8RRgAAQCq8sqLProMgABANbrDz9a8+qKPru9ZtgYAvrDb7W4REafT6fbP+8tu0Mz05+u/XC6fERGHw+Fblo2bQc7+MYd+EyuAsJD0TbtV+rfdD6/orv7t9/uPLa0I5jj0mxgAmU2uZetatfuPx+PfrX0d9OtfehuWpD9ff/reqelJVIn9BsCZNU3z1jTN2+Fw+HY4HL69MrXX6NHL1bfg3s7/fD7/2MKOQb/+Vz62Fvqn7S99P1pqvwGQyY29VlHtuv1pCEgfX/sQoF9/xP2Vf/36h/bX+HUqud8AyOy2NPz1Sf1bGgLa9G+3//39/eftdtult/f3958R+vUP76/x8G9SWr8BkEnde/azleHvUX/TNG9rHwL064/Qr3+6/pL3JaX3GwCZjPP+vu5f805Av/4I/frz9Lf/vob9SA39BkAm4by/4f33fgjUvCPQrz9Cf239uR5zqv6pjyRtrb+aCyhSD8Pf6/37/f6j+3m1fc3064/QX1v/5XL5bA8irz7uFP3d+5xif7LFfgMgWRn+xvfXvBPUrz9Cf4396TdrpMdsf+yZbY/I39++zxxD2qNt7ju8utZ+h4DJxvCXp7/W84L064/QX2v/8Xj8m97O5/OP9BYx7LdtTNl/73ZD7/NZW+k3ADKZLQ1/fcb017oTbNOvP2J8/+l0+rPb7W6/f//+b3rLvKmTqKm/+28rDYIR/w5D6XZDz0/M3X86nf6kPz97f8/aSr9DwGRx79nPVoa/qfprORymf77+iPKeVE3Z37fDu16vv8bcb25r6r833Nx7NWvfOWrpNlP13263Xa7vgSGHgNsf796m5n4DIKM59Dttf3cIOBwORX3f6p+3v6Tvrb7VqPf39585t7HvMXIOAGOsuX/IIHg6nf50P15bf98A2B7qutbUX9QPUupj+JunPw0BWxt+2o+z1f72jqi7k8px/2Pc2zlF5OuvbQBcY/+9Yeje6lREPf33BsC+23TV3u8cQEZpmv+/ovmWhr+I+fqbpnkrbfjpoz9//737qu2cwNz0z9effs7N9XhD6B/fbwAki/YOurRvlDlssb/vxPEI/VP2dy8JsaSvDpHlupjx9Xr91f39qfqX6U+D0KN/4/rr6TcAktVWdv73bLG//cNI/zT9ta0Ctr8mOXaE+vX3/b3+cfdrAASedm/1ayuW7C9hFTD1pxWJ9gpFuk378hnpc3LssPXrT/c/9r5etZZ+AyDwMqt/8/WXuArS19++hlq6TXdH+Mpj6dff9/f6X+83AAJPsfq3fP+SqyCP+tvnR/XtCHe73S3HRY3160/3+crnj7GmfgMg8BKrf/P3tx+nvXNZYhXkUf+jHeEY+vWnP+sf328ABAYrYfVrSSX0d3c27VcdTv3Yz/Z3d4Q5tkG//vb7Y/qHXAOw7/ZJ7f0GQOBpVv/K6F/qUNiz/VN9jfTr727PHNbSbwAEBilh9WtJJfUvcUL82P7aL47t/7/+9vtr6DcAAk8pZfVrKaX1z70KMqb/er3+6r6N3Z6a+tNlQ9KlQ/TrH7s9Y/oNgMCXSnr2u4QS++dcBdGvv/2+/nX0GwCBwUpb/Zpbqf1zrYLof61/6hdo6Ncf8Xy/ARB4qMRnv3MquX+OVRD9+frbrzYduVkRoV//uH4DIDBIqas/cym9v70KMMX26c/bn3sb9euPeK7/e84NANal5NWfOdTQ3zTN236//2ia5u1wOGS9b/3j+6c+/Kdf/6v9BkDgrvRM8nK5fHb/bgtq6Z9qm/Tn6899+K9Nv/5XPs8ACHzpcDh8i1j2F68vSb/+iHz9JQ7Rj+hfZ79zAIHBSvnBtRT9+p+5/doGZv3r6jcAAsCEpjz8VwP9ZfY7BAwAM7GKWk5/2pbcLx4Z8pglsAIIALAxBkAAyKz087+mpr/8fgMgAEyk1PO/5qK/3H7nAAJAZq1zvYq+huJU9G+7HwCIOg4JTkn/tvsBAAAAgLn9D+bCc11iqbcaAAAAAElFTkSuQmCC";
+
+        function drawSurvivalIconStrip(
+          fullImg,
+          emptyImg,
+          value,
+          x,
+          y,
+          count,
+          size
+        ) {
+          var fullUnits = Math.max(0, Math.min(count * 2, Math.ceil(value)));
+          for (var i = 0; i < count; i++) {
+            var units = Math.max(0, Math.min(2, fullUnits - i * 2));
+            var img = units === 2 ? fullImg : emptyImg;
+            if (img.complete && img.naturalWidth) {
+              ctx.drawImage(
+                img,
+                i * size,
+                0,
+                size,
+                size,
+                x + i * size,
+                y,
+                size,
+                size
+              );
+            }
+          }
+        }
+
+        var backgroundImage;
+        var lastAutoSaveTime = 0;
+
+        function initEverything() {
+          console.log("Initializing world.");
+          var selectedWorld = null;
+          try {
+            selectedWorld = JSON.parse(
+              localStorage.getItem("mc_selected_world") || "null"
+            );
+          } catch (e) {}
+          // マルチプレイはシングルプレイの選択ワールド設定を絶対に引き継がない。
+          // 以前は mc_selected_world の worldType='flat' が残っていると、
+          // 自分だけマルチがフラットになることがあった。
+          if (isMultiplayer) {
+            worldType = "default";
+            gameMode = "survival";
+            structuresEnabled = true;
+          } else {
+            worldType = (selectedWorld && selectedWorld.worldType) || "default";
+            gameMode = (selectedWorld && selectedWorld.gameMode) || "survival";
+            structuresEnabled =
+              selectedWorld && selectedWorld.structuresEnabled !== undefined
+                ? !!selectedWorld.structuresEnabled
+                : true;
+          }
+          loadWorldData();
+          if (!isMultiplayer) {
+            if (savedWorldData && savedWorldData.worldType)
+              worldType = savedWorldData.worldType;
+            if (savedWorldData && savedWorldData.gameMode)
+              gameMode = savedWorldData.gameMode;
+            if (
+              savedWorldData &&
+              savedWorldData.structuresEnabled !== undefined
+            )
+              structuresEnabled = !!savedWorldData.structuresEnabled;
+          }
+          // seed がURLに無い場合でも、同じルームなら全員が同じ地形になるよう
+          // room ID から決定的な seed を作る。
+          function multiplayerRoomSeed(room) {
+            var h = 2166136261 >>> 0;
+            var text = String(room || "default-room");
+            for (var si = 0; si < text.length; si++) {
+              h ^= text.charCodeAt(si);
+              h = Math.imul(h, 16777619) >>> 0;
+            }
+            return (h % 2000000000) + 1;
+          }
+          worldSeed = isMultiplayer
+            ? multiplayerRoomSeed(multiplayerRoomId)
+            : savedWorldData && savedWorldData.worldSeed !== undefined
+            ? savedWorldData.worldSeed
+            : selectedWorld && selectedWorld.seed
+            ? Number(selectedWorld.seed)
+            : random(2000000000);
+          // Multiplayer adapter is defined outside this game-scope function,
+          // so expose the current seed explicitly instead of referencing the
+          // private local variable from another scope.
+          window.__mcWorldSeed = worldSeed;
+          seedHash(worldSeed);
+          noiseSeed(worldSeed);
+          renderDistance = 4;
+          generatedChunks = 0;
+          var spawnX =
+            savedWorldData && savedWorldData.playerX !== undefined
+              ? savedWorldData.playerX
+              : 8;
+          var spawnY =
+            savedWorldData && savedWorldData.playerY !== undefined
+              ? savedWorldData.playerY
+              : terrainHeight(8, 8) + 3;
+          var spawnZ =
+            savedWorldData && savedWorldData.playerZ !== undefined
+              ? savedWorldData.playerZ
+              : 8;
+          var spawnRx =
+            savedWorldData && savedWorldData.playerRx !== undefined
+              ? savedWorldData.playerRx
+              : random(-0.5);
+          var spawnRy =
+            savedWorldData && savedWorldData.playerRy !== undefined
+              ? savedWorldData.playerRy
+              : random(7);
+          var spawnFly =
+            savedWorldData && savedWorldData.flying !== undefined
+              ? savedWorldData.flying
+              : gameMode === "creative";
+
+          p = {
+            speed: 0.075,
+            velocity: new PVector(0, 0, 0),
+            direction: new PVector(0, 0, 0),
+            sprintSpeed: 1.5,
+            flySpeed: 2.5,
+            x: spawnX,
+            y: spawnY,
+            z: spawnZ,
+            w: 3 / 8,
+            bottomH: 1.62,
+            topH: 0.18,
+            rx: spawnRx,
+            ry: spawnRy,
+            onGround: false,
+            jumpSpeed: 0.3,
+            sprinting: false,
+            maxYVelocity: 1.5,
+            gravityStength: -0.032,
+            lastUpdate: win.performance.now(),
+            lastBreak: Date.now(),
+            lastPlace: Date.now(),
+            lastJump: Date.now(),
+            lastMoveTap: 0,
+            lastMoveTapKey: "",
+            autoBreak: false,
+            flying: spawnFly,
+            health:
+              savedWorldData && savedWorldData.health !== undefined
+                ? savedWorldData.health
+                : 20,
+            hunger:
+              savedWorldData && savedWorldData.hunger !== undefined
+                ? savedWorldData.hunger
+                : 20,
+            nextHungerTick: Date.now() + 30000,
+            nextDamageTick: 0,
+            frustum: [],
+          };
+          for (var i = 0; i < 4; i++) {
+            p.frustum[i] = new Plane();
+          }
+          if (savedWorldData) {
+            if (savedWorldData.hotbar) {
+              inventory.hotbar = savedWorldData.hotbar;
+              inventory.hotbarSlot = savedWorldData.hotbarSlot || 0;
+            }
+            if (savedWorldData.main) {
+              inventory.main = savedWorldData.main;
+            }
+            if (savedWorldData.hotbarCounts)
+              inventory.hotbarCounts = savedWorldData.hotbarCounts;
+            if (savedWorldData.mainCounts)
+              inventory.mainCounts = savedWorldData.mainCounts;
+            inventory.holdingCount = savedWorldData.holdingCount || 0;
+            droppedItems = Array.isArray(savedWorldData.droppedItems)
+              ? savedWorldData.droppedItems
+                  .filter(function (d) {
+                    return (
+                      d &&
+                      d.id &&
+                      Date.now() - (d.born || Date.now()) < DROP_LIFETIME
+                    );
+                  })
+                  .slice(0, DROP_MAX_ITEMS)
+                  .map(function (d) {
+                    d.count = Math.max(1, d.count || 1);
+                    return d;
+                  })
+              : [];
+            normalizeInventoryCounts();
+            blockChanges = Object.assign({}, savedWorldData.blockChanges || {});
+            rebuildChunkBlockMap();
+            if (typeof loadMobsFromSave === "function")
+              loadMobsFromSave(savedWorldData.mobs);
+          }
+          world = World();
+          if (!win.gl) {
+            var canv = document.createElement("canvas");
+            canv.width = ctx.canvas.width;
+            canv.height = ctx.canvas.height;
+            canv.style.position = "absolute";
+            // WebGLのゲーム画面を2Dオーバーレイより下、bodyの背景より上に表示する。
+            // z-index:-1 だとブラウザによってbody背景の後ろに隠れてしまい、
+            // clearColorの水色だけが見えてブロックが表示されないことがある。
+            canv.style.zIndex = "0";
+            canv.style.top = "0px";
+            canv.style.left = "0px";
+            canv.style.pointerEvents = "none";
+            gl = canv.getContext("webgl", {
+              preserveDrawingBuffer: true,
+              antialias: false,
+            });
+            var ext = gl.getExtension("OES_element_index_uint");
+            if (!ext) {
+              alert(
+                "Please use a supported browser, or update your current browser."
+              );
+            }
+            gl.viewport(0, 0, canv.width, canv.height);
+            gl.enable(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            win.gl = gl;
+          } else {
+            gl = win.gl;
+          }
+          if (!document.body.contains(gl.canvas)) {
+            document.body.append(gl.canvas);
+          }
+          modelView = newFloat32Array(16);
+          glCache = {
+            attributes: {},
+            locations: {},
+          };
+          programObject3D = createProgramObject(
+            gl,
+            vertexShaderSrc3D,
+            fragmentShaderSrc3D
+          );
+          gl.useProgram(programObject3D);
+          glCache.locations.uEdge = gl.getUniformLocation(
+            programObject3D,
+            "uEdge"
+          );
+          glCache.locations.uSampler = gl.getUniformLocation(
+            programObject3D,
+            "uSampler"
+          );
+          glCache.locations.uColor = gl.getUniformLocation(
+            programObject3D,
+            "uColor"
+          );
+          if (glCache.locations.uColor)
+            gl.uniform4f(glCache.locations.uColor, 1, 1, 1, 1);
+          glCache.locations.aShadow = gl.getAttribLocation(
+            programObject3D,
+            "aShadow"
+          );
+          //Send the block textures to the GPU
+          initTextures();
+          sideEdgeBuffers = {};
+          for (var side in sideEdgeVerts) {
+            var edgeBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, edgeBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, sideEdgeVerts[side], gl.STATIC_DRAW);
+            sideEdgeBuffers[side] = edgeBuffer;
+          }
+          texCoordsBuffers = [];
+          for (var t in textureCoords) {
+            var buff = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buff);
+            gl.bufferData(gl.ARRAY_BUFFER, textureCoords[t], gl.STATIC_DRAW);
+            texCoordsBuffers.push(buff);
+          }
+          //Bind the Vertex Array Object (VAO) that will be used to draw everything
+          indexBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexOrder, gl.STATIC_DRAW);
+          //Tell it not to render the insides of blocks
+          gl.enable(gl.CULL_FACE);
+          gl.cullFace(gl.BACK);
+          gl.disableVertexAttribArray(glCache.locations.aShadow);
+          gl.vertexAttrib1f(glCache.locations.aShadow, 1.0);
+          gl.lineWidth(2);
+          blockOutlines = false;
+          gl.enable(gl.POLYGON_OFFSET_FILL);
+          gl.polygonOffset(1, 1);
+          gl.clearColor(84 / 255, 138 / 255, 184 / 255, 1.0);
+          gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+          FOV(60);
+          var HALF_PI = Math.PI / 2;
+          initModelView(0, 0, 0, -HALF_PI / 6, -HALF_PI / 2.5);
+          block2(1, -1, 5, 1);
+          block2(2, -1, 5, 1);
+          block2(3, -2, 4, 1);
+          block2(3, -2, 5, 1);
+          block2(2, -2, 4, 1);
+          block2(1, -2, 4, 1);
+          block2(0, -3, 4, 1);
+          block2(1, -3, 4, 2);
+          block2(1, -4, 3, 1);
+          block2(2, -3, 3, 1);
+          block2(3, -2, 3, 1);
+          block2(3, -3, 2, 1);
+          block2(5, -3, 2, 1);
+          block2(4, -4, 1, 1);
+          block2(4, -3, 2, 1);
+          block2(0, -2, 5, 1);
+          block2(4, -2, 3, 1);
+          block2(4, -2, 4, 1);
+          block2(5, -3, 3, 1);
+          FOV(fov);
+          win.addEventListener("beforeunload", function () {
+            try {
+              saveWorld();
+            } catch (e) {}
+          });
+
+          // Public bridge used only by the multiplayer module. It does not alter
+          // singleplayer behavior and keeps remote changes out of local callbacks.
+          // 他プレイヤー描画用の体のパーツ定義（足元を原点としたブロック単位）
+          var MP_PLAYER_TEX = {
+            head: [
+              "mpHair",
+              "mpSkin",
+              "mpHeadFace",
+              "mpHeadSide",
+              "mpHeadSide",
+              "mpHeadSide",
+            ],
+            body: [
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+            ],
+            skin: ["mpSkin", "mpSkin", "mpSkin", "mpSkin", "mpSkin", "mpSkin"],
+            pants: [
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+              "mpTintWhite",
+            ],
+          };
+          var MP_PLAYER_PARTS = [
+            [
+              -0.15,
+              0.375,
+              0,
+              0.3,
+              0.75,
+              0.3,
+              MP_PLAYER_TEX.pants,
+              "pants",
+              1.0,
+            ],
+            [0.15, 0.375, 0, 0.3, 0.75, 0.3, MP_PLAYER_TEX.pants, "pants", 1.0],
+            [-0.45, 1.125, 0, 0.3, 0.75, 0.3, MP_PLAYER_TEX.skin, "skin", 1.0],
+            [0.45, 1.125, 0, 0.3, 0.75, 0.3, MP_PLAYER_TEX.skin, "skin", 1.0],
+            [0.0, 1.125, 0, 0.6, 0.75, 0.3, MP_PLAYER_TEX.body, "shirt", 0],
+            [0.0, 1.875, 0, 0.6, 0.6, 0.6, MP_PLAYER_TEX.head, "head", 0],
+          ];
+          window.__mcMPBridge = {
+            enabled: isMultiplayer,
+            roomId: multiplayerRoomId,
+            getPlayerState: function () {
+              if (!p) return null;
+              var horizontalSpeed = Math.sqrt(
+                ((p.velocity && p.velocity.x) || 0) *
+                  ((p.velocity && p.velocity.x) || 0) +
+                  ((p.velocity && p.velocity.z) || 0) *
+                    ((p.velocity && p.velocity.z) || 0)
+              );
+              return {
+                x: p.x,
+                y: p.y,
+                z: p.z,
+                rx: p.rx,
+                ry: p.ry,
+                name: multiplayerQuery.get("name") || "Player",
+                health: p.health,
+                hunger: p.hunger,
+                moving: horizontalSpeed > 0.025,
+              };
+            },
+            getBlockChanges: function () {
+              return Object.assign({}, blockChanges);
+            },
+            getFurnaceOrientations: function () {
+              return Object.assign({}, furnaceOrientations);
+            },
+            getBlockMetadata: function () {
+              return Object.assign({}, blockMetadata);
+            },
+            getMiniMapSnapshot: function (radius) {
+              radius = Math.max(4, Math.min(16, Number(radius) || 10));
+              var cx = Math.floor(p.x),
+                cz = Math.floor(p.z);
+              var cells = [];
+              for (var mz = -radius; mz <= radius; mz++) {
+                var row = [];
+                for (var mx = -radius; mx <= radius; mx++) {
+                  var wx = cx + mx,
+                    wz = cz + mz;
+                  // 255段を毎フレーム走査していたため、ミニマップ表示中に重くなり
+                  // 更新が止まって見えることがあった。地形生成と同じ関数から地表高を取得し、
+                  // その周辺だけ実ブロックを確認する。
+                  var top = Math.max(
+                    1,
+                    Math.min(maxHeight - 1, Math.floor(terrainHeight(wx, wz)))
+                  );
+                  var id = world.getBlock(wx, top, wz);
+                  if (!id) {
+                    for (
+                      var yy = Math.min(maxHeight - 1, top + 12);
+                      yy >= Math.max(1, top - 4);
+                      yy--
+                    ) {
+                      var bid = world.getBlock(wx, yy, wz);
+                      if (bid) {
+                        id = bid;
+                        top = yy;
+                        break;
+                      }
+                    }
+                  }
+                  row.push({ id: id || 0, y: top });
+                }
+                cells.push(row);
+              }
+              return { centerX: cx, centerZ: cz, radius: radius, cells: cells };
+            },
+            getGameMode: function () {
+              return gameMode;
+            },
+            applyRemoteGameMode: function (mode) {
+              if (mode !== "survival" && mode !== "creative") return;
+              if (gameMode === mode) return;
+              gameMode = mode;
+              p.flying = mode === "creative";
+              p.fallStartY = null;
+              updateHUD = true;
+              try {
+                saveWorld();
+              } catch (e) {}
+            },
+            applyRemoteBlock: function (x, y, z, blockVal, furnaceDir, meta) {
+              x = Number(x);
+              y = Number(y);
+              z = Number(z);
+              blockVal = Number(blockVal) || 0;
+              if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+              var key = x + "," + y + "," + z;
+              blockChanges[key] = blockVal;
+              // 他プレイヤーのブロックの向き・上下・開閉状態も復元する
+              if (meta !== undefined && meta !== null && Number(meta))
+                blockMetadata[key] = Number(meta);
+              else if (blockVal === 0) delete blockMetadata[key];
+              if (
+                blockVal === 78 &&
+                furnaceDir !== undefined &&
+                furnaceDir !== null
+              )
+                furnaceOrientations[key] = Number(furnaceDir) || 0;
+              else if (blockVal === 0) delete furnaceOrientations[key];
+              updateChunkBlockMapSingle(x, y, z, blockVal);
+              if (
+                world &&
+                world.chunks[x >> 4] &&
+                world.chunks[x >> 4][z >> 4]
+              ) {
+                world.setBlock(x, y, z, blockVal);
+              }
+            },
+            projectWorldPoint: function (x, y, z) {
+              return projectWorldPoint(x, y, z);
+            },
+            isWorldPointVisible: function (x, y, z) {
+              if (!world || !p) return false;
+              var dx = x - p.x,
+                dy = y - p.y,
+                dz = z - p.z;
+              var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              var steps = Math.max(2, Math.ceil(dist * 3));
+              for (var q = 1; q < steps; q++) {
+                var t = q / steps;
+                var bx = Math.floor(p.x + dx * t),
+                  by = Math.floor(p.y + dy * t),
+                  bz = Math.floor(p.z + dz * t);
+                if (world.getBlock(bx, by, bz)) return false;
+              }
+              return true;
+            },
+            drawRemotePlayer3D: function (
+              x,
+              y,
+              z,
+              ry,
+              walkPhase,
+              moving,
+              skinColors
+            ) {
+              if (!p || !world) return;
+              x = Number(x);
+              y = Number(y);
+              z = Number(z);
+              ry = Number(ry) || 0;
+              if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+              blockFill = true;
+              blockOutlines = false;
+              var uColorLoc = glCache.locations.uColor;
+              var swing = moving ? Math.sin(walkPhase || 0) * 0.6 : 0;
+              for (var i = 0; i < MP_PLAYER_PARTS.length; i++) {
+                var pa = MP_PLAYER_PARTS[i];
+                var partType = pa[7];
+                var pivot = pa[8] || 0;
+                copyArr(cameraModelView, modelView);
+                trans(modelView, x, y - 1.62, z);
+                // プレイヤーの視線方向に体の正面（顔）を向ける
+                rotY(modelView, -ry);
+                // パーツごとのオフセットを適用して、頭・胴・腕・足を正しい位置に描画
+                trans(modelView, pa[0], pa[1], pa[2]);
+                // 歩行アニメーション：足と腕を前後に振る
+                if (
+                  pivot > 0 &&
+                  (partType === "pants" || partType === "skin")
+                ) {
+                  trans(modelView, 0, pivot / 2, 0);
+                  rotX(modelView, partType === "pants" ? swing : -swing);
+                  trans(modelView, 0, -pivot / 2, 0);
+                }
+                modelView[0] *= pa[3];
+                modelView[1] *= pa[3];
+                modelView[2] *= pa[3];
+                modelView[4] *= pa[4];
+                modelView[5] *= pa[4];
+                modelView[6] *= pa[4];
+                modelView[8] *= pa[5];
+                modelView[9] *= pa[5];
+                modelView[10] *= pa[5];
+                matMult();
+                transpose(matrix);
+                uniformMatrix(
+                  "view3d",
+                  programObject3D,
+                  "uView",
+                  false,
+                  matrix
+                );
+                // スキン色で服（シャツ・ズボン）をティントする
+                if (uColorLoc) {
+                  if (skinColors && partType === "shirt") {
+                    var sc = skinColors.shirt;
+                    gl.uniform4f(uColorLoc, sc[0], sc[1], sc[2], sc[3]);
+                  } else if (skinColors && partType === "pants") {
+                    var pc = skinColors.pants;
+                    gl.uniform4f(uColorLoc, pc[0], pc[1], pc[2], pc[3]);
+                  } else {
+                    gl.uniform4f(uColorLoc, 1, 1, 1, 1);
+                  }
+                }
+                box2(0, 0, 0, 0xff, pa[6]);
+              }
+              // uColorをリセットして他の描画に影響しないようにする
+              if (uColorLoc) gl.uniform4f(uColorLoc, 1, 1, 1, 1);
+            },
+          };
+          play();
+        }
+        var gameLoop = function () {
+          var frameStart = win.performance.now();
+          if (!screen) {
+            initEverything();
+          }
+          if (screen === "play") {
+            controls();
+            runGravity();
+            survivalTick();
+            resolveContactsAndUpdatePosition();
+            gl.clear(gl.DEPTH_BUFFER_BIT | gl.COLOR_BUFFER_BIT);
+            hotbar();
+            defineWorld(); // Draw world (among other things)
+            if (updateHUD) {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              hud();
+              updateHUD = false;
+              freezeFrame = false;
+            }
+            if (
+              isMultiplayer &&
+              typeof window.__mcMPDrawRemotePlayers === "function"
+            ) {
+              window.__mcMPDrawRemotePlayers();
+            }
+            if (isMultiplayer && typeof drawMPMiniMap === "function") {
+              drawMPMiniMap();
+            }
+            // Auto-save periodically
+            if (win.performance.now() - lastAutoSaveTime > 10000) {
+              lastAutoSaveTime = win.performance.now();
+              saveWorld();
+            }
+          } else if (screen === "inventory") {
+            drawInv();
+          } else if (screen === "settings") {
+            cursor(CROSS);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(gl.canvas, 0, 0);
+            fill(0, 0, 0);
+            ctx.fillStyle = "rgba(0,0,0,0.75)";
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.font = "50px Sans-Serif";
+            ctx.fillText("設定", width / 2, 100);
+            ctx.font = "18px Sans-Serif";
+            ctx.fillText(
+              controlMode === "mobile"
+                ? "現在：モバイル用"
+                : "現在：パソコン用",
+              width / 2,
+              140
+            );
+            ctx.fillText(
+              gameMode === "creative"
+                ? "現在のモード：クリエイティブ"
+                : "現在のモード：サバイバル",
+              width / 2,
+              165
+            );
+            updateMobileControls();
+          } else if (screen.includes("pause")) {
+            cursor(CROSS);
+            strokeWeight(1);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(gl.canvas, 0, 0);
+            textSize(60);
+            fill(0, 0, 0);
+            ctx.textAlign = "center";
+            ctx.font = "60px Sans-Serif";
+            ctx.fillText("\u30dd\u30fc\u30ba\u4e2d", width / 2, 80);
+            currentFont = "";
+          }
+          buttons.forEach(drawButton);
+          updateMobileControls();
+          if (Date.now() - analytics.lastUpdate > 500 && analytics.frames) {
+            analytics.displayedTickTime = (
+              analytics.totalTickTime / analytics.frames
+            ).toFixed(1);
+            analytics.displayedRenderTime = (
+              analytics.totalRenderTime / analytics.frames
+            ).toFixed(1);
+            analytics.displayedFrameTime = (
+              analytics.totalFrameTime / analytics.frames
+            ).toFixed(1);
+            analytics.fps = Math.round(
+              (analytics.frames * 1000) / (Date.now() - analytics.lastUpdate)
+            );
+            analytics.displayedwFrameTime = analytics.worstFrameTime.toFixed(1);
+            analytics.frames = 0;
+            analytics.totalRenderTime = 0;
+            analytics.totalTickTime = 0;
+            analytics.totalFrameTime = 0;
+            analytics.worstFrameTime = 0;
+            analytics.lastUpdate = Date.now();
+            updateHUD = true;
+          }
+          analytics.frames++;
+          analytics.totalFrameTime += win.performance.now() - frameStart;
+          analytics.worstFrameTime = Math.max(
+            win.performance.now() - frameStart,
+            analytics.worstFrameTime
+          );
+          window.raf = window.requestAnimationFrame(gameLoop);
+        };
+        return gameLoop;
+      })();
+      if (window.raf) {
+        window.cancelAnimationFrame(window.raf);
+        console.log("Canceled", window.raf);
+      }
+      if (new URLSearchParams(location.search).has("play")) init();
+
+      /* ======================================================================
+       * Node.js WebSocket Multiplayer Runtime
+       * - Node.js WebSocket relay with SQLite world snapshot persistence
+       * - Each browser tab gets a unique player id
+       * - Player position/name/HP/hunger sync
+       * - Block changes sync
+       * - New players receive the existing block-change snapshot
+       * - Game mode sync
+       * ====================================================================== */
+      (function () {
+        "use strict";
+
+        var socket = null;
+        var serverUrl = "";
+        var roomId = "";
+        var playerId = "";
+        var playerName = "Player";
+        var remotePlayers = Object.create(null);
+        var connected = false;
+        var heartbeatTimer = null;
+        var lastBlockSend = 0;
+        var started = false;
+
+        function getCurrentWorldSeed() {
+          var seed = Number(window.__mcWorldSeed);
+          return isFinite(seed) && seed > 0 ? seed : null;
+        }
+
+        function configured() {
+          return !!(window.WebSocket && (location.protocol === "http:" || location.protocol === "https:"));
+        }
+
+        function menuStatus(text, ok) {
+          var el = document.getElementById("server-status");
+          if (!el) return;
+          el.textContent = text || "";
+          el.style.color = ok ? "#55ff55" : "#ffaa00";
+        }
+
+        function setConnectButton(enabled) {
+          var b = document.getElementById("btn-connect-server");
+          if (!b) return;
+          if (enabled) b.removeAttribute("disabled");
+          else b.setAttribute("disabled", "true");
+        }
+
+        function menuInit(showError) {
+          var nameEl = document.getElementById("mp-player-name");
+          var roomEl = document.getElementById("mp-room-id");
+
+          if (nameEl)
+            nameEl.value = localStorage.getItem("mc_player_name") || "";
+          if (roomEl && !roomEl.value) roomEl.value = "test-room";
+
+          if (!configured()) {
+            setConnectButton(false);
+            menuStatus(
+              showError
+                ? "ローカルサーバーを起動してください（npm start）。"
+                : "ローカルサーバー待機中（npm start）",
+              false
+            );
+            return;
+          }
+
+          setConnectButton(true);
+          menuStatus(
+            "",
+            true
+          );
+        }
+
+        function getPlayerId() {
+          try {
+            var key = "mc_server_player_id";
+            var id = sessionStorage.getItem(key);
+            if (!id) {
+              id =
+                window.crypto && typeof window.crypto.randomUUID === "function"
+                  ? window.crypto.randomUUID()
+                  : "p-" +
+                    Date.now() +
+                    "-" +
+                    Math.random().toString(36).slice(2);
+              sessionStorage.setItem(key, id);
+            }
+            return id;
+          } catch (e) {
+            return (
+              "p-" + Date.now() + "-" + Math.random().toString(36).slice(2)
+            );
+          }
+        }
+
+        function cleanRoom(value) {
+          return (
+            String(value || "test-room")
+              .trim()
+              .replace(/[^a-zA-Z0-9_-]/g, "-")
+              .slice(0, 32) || "test-room"
+          );
+        }
+
+        function send(eventName, payload) {
+          if (!socket || socket.readyState !== WebSocket.OPEN || !connected)
+            return Promise.resolve("not-connected");
+          try {
+            socket.send(JSON.stringify({ type: "event", event: eventName, payload: payload }));
+            return Promise.resolve("ok");
+          } catch (e) {
+            console.error("[Local Server] send error", eventName, e);
+            return Promise.resolve("error");
+          }
+        }
+
+        function getLocalState() {
+          if (
+            !window.__mcMPBridge ||
+            typeof window.__mcMPBridge.getPlayerState !== "function"
+          )
+            return null;
+          try {
+            return window.__mcMPBridge.getPlayerState();
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function normalizeHexColor(value, fallback) {
+          var v = String(value || fallback || "").trim();
+          if (!/^#[0-9a-fA-F]{6}$/.test(v)) v = fallback;
+          return v;
+        }
+
+        function hexToColorArray(value, fallback) {
+          var hex = normalizeHexColor(value, fallback).slice(1);
+          var n = parseInt(hex, 16);
+          return [
+            ((n >> 16) & 255) / 255,
+            ((n >> 8) & 255) / 255,
+            (n & 255) / 255,
+            1,
+          ];
+        }
+
+        function getLocalSkin() {
+          var shirt = "#3fb2c8";
+          var pants = "#4a449e";
+          try {
+            shirt = normalizeHexColor(
+              localStorage.getItem("mc_skin_shirt"),
+              shirt
+            );
+            pants = normalizeHexColor(
+              localStorage.getItem("mc_skin_pants"),
+              pants
+            );
+          } catch (e) {}
+          return { shirt: shirt, pants: pants };
+        }
+
+        function remoteSkinToArrays(skin) {
+          skin = skin || {};
+          return {
+            shirt: hexToColorArray(skin.shirt, "#3fb2c8"),
+            pants: hexToColorArray(skin.pants, "#4a449e"),
+          };
+        }
+
+        var lastPublishedPlayerPos = null;
+
+        function publishPlayerState() {
+          var p = getLocalState();
+          if (!p || !connected) return;
+
+          var px = Number(p.x) || 0;
+          var py = Number(p.y) || 0;
+          var pz = Number(p.z) || 0;
+          var now = Date.now();
+          var moving = false;
+
+          // 速度値だけでは、接地・重力・物理演算の残り値で「停止中なのに移動中」
+          // になることがあるため、実際のX/Z座標の変化で歩行中か判定する。
+          if (lastPublishedPlayerPos) {
+            var dx = px - lastPublishedPlayerPos.x;
+            var dz = pz - lastPublishedPlayerPos.z;
+            var dt = Math.max(1, now - lastPublishedPlayerPos.t);
+            var horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+            moving = horizontalDistance > Math.max(0.004, dt * 0.00001);
+          }
+
+          lastPublishedPlayerPos = { x: px, z: pz, t: now };
+
+          send("player_state", {
+            id: playerId,
+            name: playerName,
+            x: px,
+            y: py,
+            z: pz,
+            rx: Number(p.rx) || 0,
+            ry: Number(p.ry) || 0,
+            health: Number(p.health) || 20,
+            hunger: Number(p.hunger) || 20,
+            moving: moving,
+            skin: getLocalSkin(),
+            seed: getCurrentWorldSeed(),
+            t: now,
+          });
+        }
+
+        function getWorldSnapshot() {
+          if (!window.__mcMPBridge)
+            return {
+              blockChanges: {},
+              furnaceOrientations: {},
+              blockMetadata: {},
+            };
+
+          return {
+            blockChanges:
+              typeof window.__mcMPBridge.getBlockChanges === "function"
+                ? window.__mcMPBridge.getBlockChanges()
+                : {},
+            furnaceOrientations:
+              typeof window.__mcMPBridge.getFurnaceOrientations === "function"
+                ? window.__mcMPBridge.getFurnaceOrientations()
+                : {},
+            blockMetadata:
+              typeof window.__mcMPBridge.getBlockMetadata === "function"
+                ? window.__mcMPBridge.getBlockMetadata()
+                : {},
+          };
+        }
+
+        function publishWorldSnapshot(targetId) {
+          if (!connected) return;
+          var snap = getWorldSnapshot();
+          send("world_snapshot", {
+            id: playerId,
+            target: targetId || null,
+            blockChanges: snap.blockChanges,
+            furnaceOrientations: snap.furnaceOrientations,
+            blockMetadata: snap.blockMetadata,
+            seed: getCurrentWorldSeed(),
+            t: Date.now(),
+          });
+        }
+
+        function applyWorldSnapshot(payload) {
+          if (!payload || !payload.blockChanges) return;
+          if (
+            !window.__mcMPBridge ||
+            typeof window.__mcMPBridge.applyRemoteBlock !== "function"
+          )
+            return;
+
+          var changes = payload.blockChanges || {};
+          var furnaces = payload.furnaceOrientations || {};
+          var metadata = payload.blockMetadata || {};
+
+          Object.keys(changes).forEach(function (key) {
+            var a = key.split(",");
+            if (a.length !== 3) return;
+
+            var x = Number(a[0]);
+            var y = Number(a[1]);
+            var z = Number(a[2]);
+            if (
+              !Number.isFinite(x) ||
+              !Number.isFinite(y) ||
+              !Number.isFinite(z)
+            )
+              return;
+
+            window.__mcMPBridge.applyRemoteBlock(
+              x,
+              y,
+              z,
+              Number(changes[key]) || 0,
+              furnaces[key],
+              metadata[key]
+            );
+          });
+        }
+
+        function receivePlayerState(p) {
+          if (!p || !p.id || p.id === playerId) return;
+
+          var nx = Number(p.x) || 0;
+          var ny = Number(p.y) || 0;
+          var nz = Number(p.z) || 0;
+          var old = remotePlayers[p.id];
+          var actuallyMoving = !!p.moving;
+
+          // 受信側でも実座標の変化を確認する。送信側の判定に関係なく、
+          // 座標が止まっていれば絶対に歩行アニメーションを動かさない。
+          if (old) {
+            var ddx = nx - old.x;
+            var ddz = nz - old.z;
+            actuallyMoving = Math.sqrt(ddx * ddx + ddz * ddz) > 0.002;
+          }
+
+          remotePlayers[p.id] = {
+            id: p.id,
+            name: String(p.name || "Player").slice(0, 16),
+            x: nx,
+            y: ny,
+            z: nz,
+            rx: Number(p.rx) || 0,
+            ry: Number(p.ry) || 0,
+            health: Number(p.health) || 20,
+            hunger: Number(p.hunger) || 20,
+            moving: actuallyMoving,
+            skin: remoteSkinToArrays(p.skin),
+            walkPhase: old && actuallyMoving ? old.walkPhase : 0,
+            lastSeen: Date.now(),
+          };
+        }
+
+        function drawRemotePlayers() {
+          if (
+            !window.__mcMPBridge ||
+            typeof window.__mcMPBridge.drawRemotePlayer3D !== "function"
+          )
+            return;
+
+          var now = Date.now();
+          Object.keys(remotePlayers).forEach(function (id) {
+            var rp = remotePlayers[id];
+            if (!rp) return;
+
+            if (now - rp.lastSeen > 6000) {
+              delete remotePlayers[id];
+              return;
+            }
+
+            // 止まっているプレイヤーは歩行アニメーションを完全に止める。
+            // 動いている間だけ歩行位相を進めるので、停止時に腕・足が勝手に踊らない。
+            if (rp.moving) {
+              rp.walkPhase += 0.42;
+            } else {
+              rp.walkPhase = 0;
+            }
+
+            try {
+              window.__mcMPBridge.drawRemotePlayer3D(
+                rp.x,
+                rp.y,
+                rp.z,
+                rp.ry,
+                rp.walkPhase,
+                rp.moving,
+                rp.skin
+              );
+            } catch (e) {
+              console.warn("[Local Server] remote player draw error", e);
+            }
+          });
+        }
+
+        function showDebug(text, error) {
+          var el = document.getElementById("dbg-status");
+          if (!el) return;
+          el.textContent = "Status: " + text;
+          el.style.color = error ? "#ff5555" : "#00ff00";
+        }
+
+        function makeDebugPanel() {
+          if (document.getElementById("mc-debug-panel")) return;
+          var box = document.createElement("div");
+          box.id = "mc-debug-panel";
+          box.style.cssText =
+            "position:fixed;top:10px;right:10px;background:rgba(0,0,0,.8);" +
+            "color:#00ff00;padding:10px;font-family:monospace;font-size:12px;" +
+            "z-index:99999;max-width:360px;border-radius:5px;pointer-events:none;";
+          box.innerHTML =
+            "<div><b>[MP Debug]</b></div>" +
+            '<div id="dbg-status">Status: 接続開始...</div>';
+          (document.body || document.documentElement).appendChild(box);
+        }
+
+        async function start() {
+          if (started) return;
+          started = true;
+
+          makeDebugPanel();
+
+          if (!configured()) {
+            showDebug("ローカルサーバーが利用できません", true);
+            started = false;
+            return;
+          }
+
+          var params = new URLSearchParams(window.location.search);
+          roomId = cleanRoom(params.get("room") || "test-room");
+          playerName =
+            String(
+              params.get("name") ||
+                localStorage.getItem("mc_player_name") ||
+                "Player"
+            )
+              .trim()
+              .slice(0, 16) || "Player";
+          playerId = getPlayerId();
+
+          showDebug("Node.jsサーバー接続中… room=" + roomId);
+
+          try {
+            serverUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
+            socket = new WebSocket(serverUrl);
+            await new Promise(function (resolve, reject) {
+              var timeout = setTimeout(function () { reject(new Error("サーバー接続がタイムアウトしました")); }, 8000);
+              socket.addEventListener("open", function () {
+                clearTimeout(timeout);
+                socket.send(JSON.stringify({ type: "join", room: roomId, id: playerId, name: playerName }));
+                resolve();
+              }, { once: true });
+              socket.addEventListener("error", function () {
+                clearTimeout(timeout);
+                reject(new Error("Node.jsサーバーに接続できません。npm startを確認してください"));
+              }, { once: true });
+            });
+
+            socket.addEventListener("message", function (ev) {
+              var message;
+              try { message = JSON.parse(ev.data); } catch (_) { return; }
+              var p = message && message.payload;
+              switch (message.event) {
+                case "player_state": receivePlayerState(p); break;
+                case "player_leave": if (p && p.id) delete remotePlayers[p.id]; break;
+                case "world_snapshot_request":
+                  if (p && p.id && p.id !== playerId) publishWorldSnapshot(p.id);
+                  break;
+                case "world_snapshot":
+                  if (p && p.id !== playerId && (!p.target || p.target === playerId)) applyWorldSnapshot(p);
+                  break;
+                case "block_change":
+                  if (p && p.id !== playerId && window.__mcMPBridge && typeof window.__mcMPBridge.applyRemoteBlock === "function")
+                    window.__mcMPBridge.applyRemoteBlock(p.x, p.y, p.z, p.block, p.furnaceDir, p.meta);
+                  break;
+                case "game_mode":
+                  if (p && p.id !== playerId && window.__mcMPBridge && typeof window.__mcMPBridge.applyRemoteGameMode === "function")
+                    window.__mcMPBridge.applyRemoteGameMode(p.mode);
+                  break;
+              }
+            });
+            socket.addEventListener("close", function () {
+              connected = false;
+              showDebug("サーバーとの接続が切れました", true);
+            });
+
+            connected = true;
+            showDebug(
+              "ローカルサーバー接続成功！ room=" +
+                roomId +
+                " / seed=" +
+                getCurrentWorldSeed() +
+                " / 自分=" +
+                playerName
+            );
+
+            // 接続直後に自分の存在を知らせる。
+            publishPlayerState();
+
+            // 既存プレイヤーにワールド差分を要求する。
+            await send("world_snapshot_request", {
+              id: playerId,
+              t: Date.now(),
+            });
+
+            // ゲームのプレイヤー状態を毎秒2回送信。
+            heartbeatTimer = setInterval(function () {
+              var now = Date.now();
+
+              Object.keys(remotePlayers).forEach(function (id) {
+                if (now - remotePlayers[id].lastSeen > 6000) {
+                  delete remotePlayers[id];
+                }
+              });
+
+              publishPlayerState();
+              showDebug(
+                "通信中 / 相手: " + Object.keys(remotePlayers).length + "人"
+              );
+            }, 200);
+
+            // ゲーム本体からのブロック変更をRealtimeへ送る。
+            if (window.__mcMPBridge) {
+              window.__mcMPBridge.localBlockChanged = function (
+                x,
+                y,
+                z,
+                blockVal,
+                furnaceDir,
+                meta
+              ) {
+                if (!connected) return;
+
+                var now = Date.now();
+                if (now - lastBlockSend < 20) return;
+                lastBlockSend = now;
+
+                send("block_change", {
+                  id: playerId,
+                  x: Number(x),
+                  y: Number(y),
+                  z: Number(z),
+                  block: Number(blockVal) || 0,
+                  furnaceDir: furnaceDir == null ? null : Number(furnaceDir),
+                  meta: meta == null ? null : Number(meta),
+                  seed: getCurrentWorldSeed(),
+                  t: now,
+                });
+              };
+
+              window.__mcMPBridge.localGameModeChanged = function (mode) {
+                if (!connected) return;
+                if (mode !== "survival" && mode !== "creative") return;
+                send("game_mode", {
+                  id: playerId,
+                  mode: mode,
+                  t: Date.now(),
+                });
+              };
+            }
+
+            // ゲームループから毎フレーム呼ばれる描画関数。
+            // ここでは必ず「同じremotePlayers」を使う。
+            window.__mcMPDrawRemotePlayers = drawRemotePlayers;
+            window.__mcMPLeave = leave;
+          } catch (e) {
+            connected = false;
+            console.error("[Local Server] Multiplayer connection failed:", e);
+            showDebug(
+              "接続失敗: " + (e && e.message ? e.message : String(e)),
+              true
+            );
+          }
+        }
+
+        function leave() {
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+          }
+
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            try { socket.send(JSON.stringify({ type: "event", event: "player_leave", payload: { id: playerId } })); } catch (e) {}
+            try { socket.close(); } catch (e) {}
+          }
+          socket = null;
+          connected = false;
+        }
+
+        window.__mcServerConfigured = configured;
+        window.__mcServerMenuInit = menuInit;
+        window.__mcMPDrawRemotePlayers = drawRemotePlayers;
+        window.__mcMPLeave = leave;
+
+        if (
+          new URLSearchParams(window.location.search).get("mode") === "multi"
+        ) {
+          start();
+        }
+
+        window.addEventListener("beforeunload", leave);
+      })();
